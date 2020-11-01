@@ -1,0 +1,2 @@
+﻿class BaseWormholeException(Exception):
+    pass

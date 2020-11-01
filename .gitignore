@@ -1,0 +1,11 @@
+*.swp
+*.pyc
+__pycache__
+/__pycache__
+/virtualenv
+/venv
+/nohup.out
+*.sqlite3
+*.out
+*.log
+/.idea
