@@ -1,7 +1,7 @@
 ﻿from typing import *
 
 if TYPE_CHECKING:
-    from .receiver import BasicWormhole
+    from .basic import BasicWormhole
 
 __PRIMARY_WORMHOLE: Optional["BasicWormhole"] = None
 DEFAULT_MESSAGE_TIMEOUT = 5
