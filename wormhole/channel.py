@@ -52,7 +52,7 @@ class WormholeAsync:
             self.wait(raise_on_error=False)
         return True
 
-    def wait(self, raise_on_error=True):
+    def wait(self, raise_on_error=True) -> Any:
         if not self.__did_get_reply:
             is_success, reply_data, wh_receiver_id = self.channel.wait_for_reply(self.message_id)
             self.__reply_cache = reply_data
@@ -71,10 +71,10 @@ class WormholeRedisChannel(AbstractWormholeChannel):
     MESSAGE_WORMHOLE_RECEIVER_ID_HKEY = "hid"
 
     def __init__(self, redis_uri: str = "redis://localhost:6379/1"):
-        self.__rdb = redis.Redis.from_url(redis_uri)
+        self.__rdb = redis.Redis.from_url(redis_uri, decode_responses=False)
         self.__encoder = WormholePickleEncoder()
 
-    def send(self, queue_name: str, data: Union[bytes, str],
+    def send(self, queue_name: str, data: Any,
              queue_timeout: int = DEFAULT_MESSAGE_TIMEOUT) -> WormholeAsync:
         actual_timeout = queue_timeout + 2
         message_id = "wh:" + generate_uid()
@@ -127,7 +127,7 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         transaction.execute()
 
     def pop_next(self, wh_receiver_id: str, queue_names: List[str], timeout: int = 5) -> Optional[
-        Tuple[str, str, Union[str, bytes]]]:
+        Tuple[str, str, bytes]]:
         result: Optional[Tuple[bytes, bytes]] = self.__rdb.brpop(queue_names, timeout)
         did_timeout = result is None
         if did_timeout:

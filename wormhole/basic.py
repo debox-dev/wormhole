@@ -1,7 +1,7 @@
 ﻿from typing import *
 
 from .error import BaseWormholeException
-from .registry import get_primary_wormhole, set_primary_wormhole, PRINT_HANDLER_EXCEPTIONS
+from .registry import PRINT_HANDLER_EXCEPTIONS
 from .utils import generate_uid, merge_queue_name_with_tag
 
 if TYPE_CHECKING:
@@ -46,7 +46,7 @@ class WormholeQueueNameFormatter:
 class BasicWormhole:
     POP_TIMEOUT = 1
 
-    def __init__(self, channel: Optional["AbstractWormholeChannel"] = None, allow_auto_set_as_primary: bool = True):
+    def __init__(self, channel: Optional["AbstractWormholeChannel"] = None):
         if channel is None:
             from .channel import create_default_channel
             channel = create_default_channel()
@@ -55,8 +55,6 @@ class BasicWormhole:
         self.__running = False
         self.__receiver_id = generate_uid()
         self.__register_internal_handlers()
-        if allow_auto_set_as_primary:
-            self.__set_as_primary_if_needed()
 
     @property
     def id(self) -> str:
@@ -147,7 +145,3 @@ class BasicWormhole:
 
     def __register_internal_handlers(self):
         self.__handlers[self.__receiver_id] = self.__internal_handler_private_queue
-
-    def __set_as_primary_if_needed(self):
-        if get_primary_wormhole() is None:
-            set_primary_wormhole(self)

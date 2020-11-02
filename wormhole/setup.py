@@ -2,6 +2,10 @@
 
 from wormhole.channel import WormholeRedisChannel
 from wormhole.basic import BasicWormhole
+from wormhole.error import BaseWormholeException
+from wormhole.registry import set_primary_wormhole, get_primary_wormhole
+
+from typing import *
 
 
 class WormholeAsyncType(Enum):
@@ -9,12 +13,22 @@ class WormholeAsyncType(Enum):
     GEVENT = auto()
 
 
+class WormholeSetupError(BaseWormholeException):
+    pass
+
+
 def basic_wormhole_setup(channel_uri: str = "redis://localhost:6379/1",
                          async_type: WormholeAsyncType = WormholeAsyncType.NONE):
+    if get_primary_wormhole() is not None:
+        raise WormholeSetupError("Primary wormhole already set up")
     channel = WormholeRedisChannel(channel_uri)
+    wormhole: Optional[BasicWormhole] = None
     if async_type == WormholeAsyncType.NONE:
-        return BasicWormhole(channel)
+        wormhole = BasicWormhole(channel)
     if async_type:
         from .async_implementations.async_gevent import GeventWormhole
-        return GeventWormhole(channel)
-    raise Exception("Unknown async type")
+        wormhole = GeventWormhole(channel)
+    if wormhole is None:
+        raise WormholeSetupError(f"Unknown async type specified: {async_type}")
+    set_primary_wormhole(wormhole)
+    return wormhole
