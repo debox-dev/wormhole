@@ -101,6 +101,20 @@ class BasicWormhole:
             raise WormholeHandlerNotRegistered(queue_name)
         del self.__handlers[queue_name]
 
+    def execute_handler(self, handler_func: Callable, data: Any, on_response: Callable):
+        try:
+            reply_data = handler_func(data)
+            on_response(reply_data, False)
+        except Exception as e:
+            if PRINT_HANDLER_EXCEPTIONS:
+                import traceback
+                print("=" * 80)
+                print(f"DATA: {repr(data)}")
+                print("HANDLING EXCEPTION")
+                traceback.print_exc()
+                print("=" * 80)
+            on_response(str(e), True)
+
     def send(self, queue_name: str, data: Any, tag: Optional[str] = None):
         queue_name = merge_queue_name_with_tag(queue_name, tag)
         wh_queue_name = WormholeQueueNameFormatter.user_queue_to_wh_queue(queue_name)
@@ -118,24 +132,20 @@ class BasicWormhole:
         handlers = self.__get_handler_by_queue_names()
         channel_queue_names = [WormholeQueueNameFormatter.user_queue_to_wh_queue(q) for q in handlers.keys()]
         result = self.__channel.pop_next(self.id, channel_queue_names, timeout)
+        
         did_timeout = result is None
         if did_timeout:
             return
         popped_wh_queue_name, message_id, data = result
         popped_user_queue_name = WormholeQueueNameFormatter.wh_queue_to_user_queu(popped_wh_queue_name)
-        try:
-            handler = handlers[popped_user_queue_name]
-            reply_data = handler(data)
-            self.__channel.reply(message_id, reply_data, False)
-        except Exception as e:
-            if PRINT_HANDLER_EXCEPTIONS:
-                import traceback
-                print("=" * 80)
-                print(f"QUEUE: {popped_wh_queue_name} MSGID: {message_id} DATA: {repr(data)}")
-                print("HANDLING EXCEPTION")
-                traceback.print_exc()
-                print("=" * 80)
-            self.__channel.reply(message_id, str(e), True)
+
+        handler_func = handlers[popped_user_queue_name]
+        self.execute_handler(handler_func, data,
+                             lambda d, e: self.__on_handler__response(message_id, d, e))
+
+    def __on_handler__response(self, message_id: str, reply_data: Any, is_error: bool):
+
+        self.__channel.reply(message_id, reply_data, is_error)
 
     def __internal_handler_private_queue(self, data: bytes):
         command = data

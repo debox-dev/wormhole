@@ -16,6 +16,8 @@ def register_handler_instance(instance: object):
         wormhole_queue_name = getattr(attr, 'wormhole_queue_name')
         wormhole_queue_tag = getattr(attr, 'wormhole_queue_tag')
         wormhole: "BasicWormhole" = getattr(attr, 'wormhole')
+        if wormhole is None:
+            wormhole = get_primary_wormhole()
         wormhole.register_handler(wormhole_queue_name, attr, wormhole_queue_tag)
 
 

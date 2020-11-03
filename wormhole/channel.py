@@ -2,6 +2,8 @@
 
 from typing import *
 
+from redis import BlockingConnectionPool
+
 from wormhole.encoding import WormholePickleEncoder
 from wormhole.error import BaseWormholeException
 from wormhole.registry import DEFAULT_MESSAGE_TIMEOUT, DEFAULT_REPLY_TIMEOUT
@@ -70,39 +72,46 @@ class WormholeRedisChannel(AbstractWormholeChannel):
     MESSAGE_ERROR_HKEY = "err"
     MESSAGE_WORMHOLE_RECEIVER_ID_HKEY = "hid"
 
-    def __init__(self, redis_uri: str = "redis://localhost:6379/1"):
-        self.__rdb = redis.Redis.from_url(redis_uri, decode_responses=False)
+    def __init__(self, redis_uri: str = "redis://localhost:6379/1", max_connections=10):
+        self.__connection_pool = BlockingConnectionPool.from_url(redis_uri, max_connections=max_connections)
         self.__encoder = WormholePickleEncoder()
+
+    def __get_rdb(self):
+        return redis.Redis(connection_pool=self.__connection_pool)
 
     def send(self, queue_name: str, data: Any,
              queue_timeout: int = DEFAULT_MESSAGE_TIMEOUT) -> WormholeAsync:
         actual_timeout = queue_timeout + 2
         message_id = "wh:" + generate_uid()
-        transaction = self.__rdb.pipeline()
+        rdb = self.__get_rdb()
+        transaction = rdb.pipeline()
         transaction.hset(message_id, self.MESSAGE_DATA_HKEY, self.__encoder.encode(data))
         transaction.expire(message_id, actual_timeout)
         transaction.lpush(queue_name, message_id)
         transaction.expire(queue_name, actual_timeout)
         transaction.execute()
+
         return WormholeAsync(message_id, self)
 
     def check_for_reply(self, message_id: str):
         response_queue = "response:" + message_id
-        return self.__rdb.llen(response_queue) > 0
+        rdb = self.__get_rdb()
+        return rdb.llen(response_queue) > 0
 
     def wait_for_reply(self, message_id: str, timeout: int = DEFAULT_MESSAGE_TIMEOUT) -> Tuple[bool, Any, str]:
         response_queue = "response:" + message_id
-        result = self.__rdb.brpop(response_queue, timeout)
-        data = self.__rdb.hget(message_id, self.MESSAGE_RESPONSE_HKEY)
-        error = self.__rdb.hget(message_id, self.MESSAGE_ERROR_HKEY)
-        receiver_id = self.__rdb.hget(message_id, self.MESSAGE_WORMHOLE_RECEIVER_ID_HKEY)
+        rdb = self.__get_rdb()
+        result = rdb.brpop(response_queue, timeout)
+        data = rdb.hget(message_id, self.MESSAGE_RESPONSE_HKEY)
+        error = rdb.hget(message_id, self.MESSAGE_ERROR_HKEY)
+        receiver_id = rdb.hget(message_id, self.MESSAGE_WORMHOLE_RECEIVER_ID_HKEY)
         if not result:
             if receiver_id is None:
                 return False, "Message timed out, no handlers found", ""
             return False, f"Timeout waiting for results from {receiver_id}", ""
         if isinstance(receiver_id, bytes):
             receiver_id = receiver_id.decode()
-        self.__rdb.delete(message_id)
+        rdb.delete(message_id)
         if error is not None:
             return False, self.__encoder.decode(error), receiver_id
         if data is None:
@@ -112,7 +121,8 @@ class WormholeRedisChannel(AbstractWormholeChannel):
     def reply(self, message_id: str, data: Union[bytes, str], is_error: bool,
               timeout: int = DEFAULT_REPLY_TIMEOUT):
         response_queue = "response:" + message_id
-        transaction = self.__rdb.pipeline()
+        rdb = self.__get_rdb()
+        transaction = rdb.pipeline()
         if is_error:
             data_hkey = self.MESSAGE_ERROR_HKEY
             signal_reply = "error"
@@ -128,18 +138,19 @@ class WormholeRedisChannel(AbstractWormholeChannel):
 
     def pop_next(self, wh_receiver_id: str, queue_names: List[str], timeout: int = 5) -> Optional[
         Tuple[str, str, bytes]]:
-        result: Optional[Tuple[bytes, bytes]] = self.__rdb.brpop(queue_names, timeout)
+        rdb = self.__get_rdb()
+        result: Optional[Tuple[bytes, bytes]] = rdb.brpop(queue_names, timeout)
         did_timeout = result is None
         if did_timeout:
             return None
         result_queue_name = result[0].decode()
         result_message_id = result[1].decode()
-        result_payload = self.__rdb.hgetall(result_message_id)
+        result_payload = rdb.hgetall(result_message_id)
         # If the queued message already expired - return none
         if result_payload is None:
             return None
         try:
-            self.__rdb.hset(result_message_id, self.MESSAGE_WORMHOLE_RECEIVER_ID_HKEY, wh_receiver_id)
+            rdb.hset(result_message_id, self.MESSAGE_WORMHOLE_RECEIVER_ID_HKEY, wh_receiver_id)
             message_data = result_payload[self.MESSAGE_DATA_HKEY.encode()]
         except KeyError:
             raise KeyError(f"Message {result_message_id} payload missing data: {repr(result_payload)}")
