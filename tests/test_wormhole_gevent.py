@@ -1,11 +1,11 @@
-﻿import gevent
-import pytest
+﻿import pytest
 import redis
 
 from tests.test_objects import Vector3Handler, Vector3Message
 from wormhole.async_implementations.async_gevent import GeventWormhole
 from wormhole.basic import WormholeWaitable
-from wormhole.channel import WormholeRedisChannel, AbstractWormholeChannel, WormholeHandlingError
+from wormhole.channel import WormholeRedisChannel, AbstractWormholeChannel
+from wormhole.error import WormholeHandlingError
 from gevent.monkey import patch_all
 from typing import *
 
@@ -35,7 +35,7 @@ class BaseTestWormholeGevent:
         self.wormhole = GeventWormhole(self.wormhole_channel)
         handler = Vector3Handler()
         self.wormhole.register_all_handlers_of_instance(handler)
-        self.wormhole.process_async()
+        self.wormhole.process_async(max_parallel=10)
 
     def teardown_method(self):
         self.wormhole.stop(wait=True)
@@ -98,12 +98,16 @@ class TestWormholeGeventSession(BaseTestWormholeGevent):
 
 
 class TestWormholeGevent(BaseTestWormholeGevent):
+    def test_ping_self(self):
+        for _ in range(0, 100):
+            delay = self.wormhole.ping(self.wormhole.id)
+            assert delay < 0.05
 
     def test_simple(self):
         promises = []
-        for i in range(0, 100):
+        for i in range(0, 30):
             m = Vector3Message(i, i * 2, i * i)
-            m.delay = 1
+            m.delay = 0.1
             p = m.send(wormhole=self.wormhole)
             promises.append((m, p))
         for m, p in promises:

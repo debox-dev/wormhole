@@ -1,6 +1,6 @@
 ﻿from typing import *
 
-from .channel import WormholeHandlingError
+from .error import WormholeHandlingError
 from .registry import DEFAULT_MESSAGE_TIMEOUT
 
 if TYPE_CHECKING:

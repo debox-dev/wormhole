@@ -5,17 +5,9 @@ from typing import *
 from redis import BlockingConnectionPool
 
 from wormhole.encoding import WormholePickleEncoder
-from wormhole.error import BaseWormholeException
+from wormhole.error import WormholeChannelError
 from wormhole.registry import DEFAULT_MESSAGE_TIMEOUT, DEFAULT_REPLY_TIMEOUT
 from wormhole.utils import generate_uid
-
-
-class WormholeHandlingError(BaseWormholeException):
-    pass
-
-
-class WormholeChannelError(BaseWormholeException):
-    pass
 
 
 class AbstractWormholeChannel:

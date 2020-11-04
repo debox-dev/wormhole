@@ -1,4 +1,5 @@
 ﻿import time
+import struct
 from enum import Enum, auto
 from typing import *
 
@@ -8,6 +9,7 @@ from .session import WormholeSession
 from .utils import generate_uid, merge_queue_name_with_tag
 from .waitable import WormholeWaitable
 from .message import WormholeMessage
+from .error import WormholeHandlingError
 
 if TYPE_CHECKING:
     from .channel import AbstractWormholeChannel
@@ -71,9 +73,10 @@ class BasicWormhole:
         self.__state = WormholeState.ACTIVE
         while self.__state == WormholeState.ACTIVE:
             self.__pop_and_handle_next(1)
+
         self.unregister_all_handlers()
         self.__state = WormholeState.INACTIVE
-
+        
     def process_async(self):
         raise NotImplementedError("Please use an async implementation like GeventWormhole")
 
@@ -107,8 +110,17 @@ class BasicWormhole:
 
         return wait_result
 
+    def ping(self, receiver_id: str):
+        original_send_time = time.time()
+        send_time_data = self.send(receiver_id, b"p" + struct.pack("d", original_send_time)).wait(timeout=3)
+
+        if send_time_data is None:
+            raise RuntimeError("Did not receive own time")
+        send_time, = struct.unpack("d", send_time_data)
+        return time.time() - send_time
+
     def stop(self, wait=True):
-        self.send(self.__receiver_id, 'stop')
+        self.send(self.__receiver_id, b"s")
         if wait:
             while self.__state != WormholeState.INACTIVE:
                 self.sleep(0.1)
@@ -117,7 +129,7 @@ class BasicWormhole:
         for queue_name in list(self.__handlers.keys()):
             if queue_name == self.__receiver_id:
                 continue
-            self.send(self.id, 'refresh')
+            self.send(self.id, b"r")
             del self.__handlers[queue_name]
 
     def register_all_handlers_of_instance(self, instance: object):
@@ -204,8 +216,15 @@ class BasicWormhole:
 
     def __internal_handler_private_queue(self, data: bytes):
         command = data
-        if command == 'stop':
+        if command[0] == b"s"[0]:  # stop
             self.__state = WormholeState.DEACTIVATING
+        elif command[0] == b"p"[0]:  # ping
+            sender_time, = struct.unpack("d", command[1:9])
+            return struct.pack("d", sender_time)
+        elif command[0] == b"r"[0]:  # refresh
+            pass
+        else:
+            raise WormholeHandlingError(f"No such command: {repr(data)}")
 
     def __register_internal_handlers(self):
         self.__handlers[self.__receiver_id] = self.__internal_handler_private_queue

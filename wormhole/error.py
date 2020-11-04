@@ -20,3 +20,15 @@ class WormholeHandlerNotRegistered(BaseWormholeQueueException):
 class WormholeInvalidQueueName(BaseWormholeQueueException):
     def __str__(self):
         return f"Not a valid wormhole queue name: {self.queue_name}"
+
+
+class WormholeDecodeError(BaseWormholeException):
+    pass
+
+
+class WormholeHandlingError(BaseWormholeException):
+    pass
+
+
+class WormholeChannelError(BaseWormholeException):
+    pass
