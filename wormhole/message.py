@@ -5,9 +5,10 @@ from typing import *
 from .error import BaseWormholeException
 from .helpers import wormhole_handler
 from .registry import get_primary_wormhole
+from .session import WormholeSession
 
 if TYPE_CHECKING:
-    from .receiver import BasicWormhole
+    from .basic import BasicWormhole
 
 
 class WormholeMessageException(BaseWormholeException):
@@ -30,8 +31,11 @@ class WormholeMessage:
     def post_send(self):
         pass
 
-    def send(self, tag: Optional[str] = None, wormhole: Optional["BasicWormhole"] = None,
+    def send(self, tag: Optional[str] = None, wormhole: Union[None, "BasicWormhole", "WormholeSession"] = None,
              override_queue_name: Optional[str] = None):
+        if isinstance(wormhole, WormholeSession):
+            tag = wormhole.receiver_id
+            wormhole = wormhole.wormhole
         wormhole = self.__get_wormhole(wormhole)
         queue_name = override_queue_name or self.get_base_queue_name()
         wormhole_async = wormhole.send(queue_name, self, tag)
@@ -39,7 +43,7 @@ class WormholeMessage:
 
     @classmethod
     def register_simple_handler(cls, handler_func: Callable, wormhole: Optional["BasicWormhole"] = None,
-                         tag: Optional[str] = None):
+                                tag: Optional[str] = None):
         wormhole = cls.__get_wormhole(wormhole)
         wormhole.register_message_handler(cls, handler_func, queue_name=None, tag=tag)
 

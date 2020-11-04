@@ -23,7 +23,7 @@ class AbstractWormholeChannel:
             Optional[Tuple[str, Union[str, bytes]]]:
         raise NotImplementedError()
 
-    def send(self, queue_name: str, data: Union[bytes, str]) -> "WormholeAsync":
+    def send(self, queue_name: str, data: Union[bytes, str]) -> str:
         raise NotImplementedError()
 
     def check_for_reply(self, message_id: str) -> bool:
@@ -37,49 +37,13 @@ class AbstractWormholeChannel:
         raise NotImplementedError()
 
 
-class WormholeAsync:
-    def __init__(self, message_id: str, channel: AbstractWormholeChannel):
-        self.message_id = message_id
-        self.channel = channel
-        self.__reply_cache = None
-        self.__did_get_reply = False
-        self.__is_error = False
-        self.__wh_receiver_id: Optional[str] = None
-
-    @property
-    def receiver_id(self):
-        return self.__wh_receiver_id
-
-    @property
-    def is_error(self):
-        return self.__is_error
-
-    def poll(self):
-        if not self.__did_get_reply:
-            if not self.channel.check_for_reply(self.message_id):
-                return False
-            self.wait(raise_on_error=False)
-        return True
-
-    def wait(self, raise_on_error=True) -> Any:
-        if not self.__did_get_reply:
-            is_success, reply_data, wh_receiver_id = self.channel.wait_for_reply(self.message_id)
-            self.__reply_cache = reply_data
-            self.__is_error = not is_success
-            self.__did_get_reply = True
-            self.__wh_receiver_id = wh_receiver_id
-        if self.is_error and raise_on_error:
-            raise WormholeHandlingError(f"Message processing error: {self.__reply_cache}")
-        return self.__reply_cache
-
-
 class WormholeRedisChannel(AbstractWormholeChannel):
     MESSAGE_DATA_HKEY = "in"
     MESSAGE_RESPONSE_HKEY = "out"
     MESSAGE_ERROR_HKEY = "err"
     MESSAGE_WORMHOLE_RECEIVER_ID_HKEY = "hid"
 
-    def __init__(self, redis_uri: str = "redis://localhost:6379/1", max_connections=10):
+    def __init__(self, redis_uri: str = "redis://localhost:6379/1", max_connections=20):
         self.__connection_pool = BlockingConnectionPool.from_url(redis_uri, max_connections=max_connections)
         self.__encoder = WormholePickleEncoder()
         self.__closed = False
@@ -90,9 +54,9 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         return redis.Redis(connection_pool=self.__connection_pool)
 
     def send(self, queue_name: str, data: Any,
-             queue_timeout: int = DEFAULT_MESSAGE_TIMEOUT) -> WormholeAsync:
+             queue_timeout: int = DEFAULT_MESSAGE_TIMEOUT) -> str:
         actual_timeout = queue_timeout + 2
-        message_id = "wh:" + generate_uid()
+        message_id = f"wh:{generate_uid()}"
         rdb = self.__get_rdb()
         transaction = rdb.pipeline()
         transaction.hset(message_id, self.MESSAGE_DATA_HKEY, self.__encoder.encode(data))
@@ -100,8 +64,8 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         transaction.lpush(queue_name, message_id)
         transaction.expire(queue_name, actual_timeout)
         transaction.execute()
-
-        return WormholeAsync(message_id, self)
+        assert rdb.exists(message_id)
+        return message_id
 
     def check_for_reply(self, message_id: str):
         response_queue = "response:" + message_id

@@ -1,7 +1,7 @@
 ﻿import redis
 
 from tests.test_objects import Vector3
-from wormhole.channel import WormholeRedisChannel, WormholeAsync
+from wormhole.channel import WormholeRedisChannel
 
 from typing import *
 
@@ -30,13 +30,12 @@ class TestRedisChannel:
 
         # Send data
         channel = self.tested_channel
-        result_async: WormholeAsync = channel.send(test_queue_name, test_payload_data, 10)
-        assert result_async.channel == channel
+        message_id = channel.send(test_queue_name, test_payload_data, 10)
         result_queue_name, result_message_id, result_data = channel.pop_next(imaginary_receiver_id,
                                                                              [test_queue_name, dummy_queue_name],
                                                                              timeout=1)
         assert not channel.check_for_reply(result_message_id)
-        assert result_message_id == result_async.message_id
+        assert result_message_id == message_id
         assert result_queue_name == test_queue_name
         assert result_data == test_payload_data
 
@@ -58,22 +57,19 @@ class TestRedisChannel:
 
         # Send data
         channel = self.tested_channel
-        result_async: WormholeAsync = channel.send(test_queue_name, test_payload_data, 10)
-        assert result_async.channel == channel
+        message_id = channel.send(test_queue_name, test_payload_data, 10)
         result_queue_name, result_message_id, result_data = channel.pop_next(imaginary_receiver_id,
                                                                              [test_queue_name, dummy_queue_name],
                                                                              timeout=1)
-        assert not result_async.poll()
-        assert result_message_id == result_async.message_id
+        assert result_message_id == message_id
         assert result_queue_name == test_queue_name
         assert result_data == test_payload_data
 
         # Test replying to the received data using the async object
         channel.reply(result_message_id, test_reply_data, False, 1)
-        result_async_data = result_async.wait()
-        assert result_async_data == test_reply_data
-        assert not result_async.is_error
-        assert result_async.poll()
+        is_success, data, receiver_id = self.tested_channel.wait_for_reply(message_id, 2)
+        assert is_success
+        assert data == test_reply_data
 
     def test_wormhole_send_instances_of_objects(self):
         imaginary_receiver_id = "receiver1"
@@ -84,13 +80,11 @@ class TestRedisChannel:
 
         # Send data
         channel = self.tested_channel
-        result_async: WormholeAsync = channel.send(test_queue_name, test_payload_data, 10)
-        assert result_async.channel == channel
+        message_id = channel.send(test_queue_name, test_payload_data, 10)
         result_queue_name, result_message_id, result_data = channel.pop_next(imaginary_receiver_id,
                                                                              [test_queue_name, dummy_queue_name],
                                                                              timeout=1)
-        assert not result_async.poll()
-        assert result_message_id == result_async.message_id
+        assert result_message_id == message_id
         assert result_queue_name == test_queue_name
         assert result_data == test_payload_data
         assert isinstance(result_data, Vector3)
@@ -98,9 +92,10 @@ class TestRedisChannel:
 
         # Test replying to the received data using the async object
         channel.reply(result_message_id, test_reply_data, False, 1)
-        result_async_data = result_async.wait()
-        assert result_async_data == test_reply_data
-        assert not result_async.is_error
-        assert result_async.poll()
-        assert isinstance(result_async.wait(), Vector3)
-        assert result_async.wait().magnitude == test_reply_data.magnitude
+        # Test replying to the received data using the async object
+        channel.reply(result_message_id, test_reply_data, False, 1)
+        is_success, data, receiver_id = self.tested_channel.wait_for_reply(message_id, 2)
+        assert is_success
+        assert data == test_reply_data
+        assert isinstance(data, Vector3)
+        assert data.magnitude == test_reply_data.magnitude

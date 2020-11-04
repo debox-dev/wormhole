@@ -1,33 +1,22 @@
 ﻿import time
+from enum import Enum, auto
 from typing import *
 
-from .error import BaseWormholeException
+from .error import WormholeInvalidQueueName, WormholeHandlerAlreadyExists, WormholeHandlerNotRegistered
 from .registry import PRINT_HANDLER_EXCEPTIONS
+from .session import WormholeSession
 from .utils import generate_uid, merge_queue_name_with_tag
+from .waitable import WormholeWaitable
+from .message import WormholeMessage
 
 if TYPE_CHECKING:
     from .channel import AbstractWormholeChannel
-    from .message import WormholeMessage
 
 
-class BaseWormholeQueueException(BaseWormholeException):
-    def __init__(self, queue_name: str):
-        self.queue_name = queue_name
-
-
-class WormholeHandlerAlreadyExists(BaseWormholeQueueException):
-    def __str__(self):
-        return f"A handler is already registered for queue {self.queue_name}"
-
-
-class WormholeHandlerNotRegistered(BaseWormholeQueueException):
-    def __str__(self):
-        return f"A handler is not registered for queue {self.queue_name}"
-
-
-class WormholeInvalidQueueName(BaseWormholeQueueException):
-    def __str__(self):
-        return f"Not a valid wormhole queue name: {self.queue_name}"
+class WormholeState(Enum):
+    INACTIVE = auto()
+    ACTIVE = auto()
+    DEACTIVATING = auto()
 
 
 class WormholeQueueNameFormatter:
@@ -44,6 +33,15 @@ class WormholeQueueNameFormatter:
         return wh_queue_name[len(cls.PREFIX):]
 
 
+class WormholeWaitResult:
+    def __init__(self, item: Any, data: Any, reply: Optional[Callable], tag: Optional[str] = None):
+        self.tag = tag
+        self.timeout = item is None
+        self.reply = reply
+        self.item = item
+        self.data = data
+
+
 class BasicWormhole:
     POP_TIMEOUT = 1
 
@@ -53,7 +51,7 @@ class BasicWormhole:
             channel = create_default_channel()
         self.__handlers: Dict[str, Callable] = dict()
         self.__channel = channel
-        self.__running = False
+        self.__state: WormholeState = WormholeState.INACTIVE
         self.__receiver_id = generate_uid()
         self.__register_internal_handlers()
 
@@ -67,14 +65,14 @@ class BasicWormhole:
 
     @property
     def is_running(self):
-        return self.__running
+        return self.__state != WormholeState.INACTIVE
 
     def process_blocking(self):
-        self.__running = True
-        while self.__running:
+        self.__state = WormholeState.ACTIVE
+        while self.__state == WormholeState.ACTIVE:
             self.__pop_and_handle_next(1)
         self.unregister_all_handlers()
-        self.__running = False
+        self.__state = WormholeState.INACTIVE
 
     def process_async(self):
         raise NotImplementedError("Please use an async implementation like GeventWormhole")
@@ -82,14 +80,45 @@ class BasicWormhole:
     def sleep(self, duration):
         time.sleep(duration)
 
+    def wait_for_any(self, *args: Union[str, Type[WormholeMessage], WormholeWaitable],
+                     timeout: int = 0) -> WormholeWaitResult:
+        channel_queue_names: List[str] = []
+        waitable_by_queue: Dict[str, WormholeWaitable] = dict()
+        for item in args:
+            waitable = WormholeWaitable.from_item(item)
+            queue_name = merge_queue_name_with_tag(waitable.queue_name, waitable.tag)
+            channel_queue_names.append(queue_name)
+            waitable_by_queue[queue_name] = waitable
+        channel_queue_names = [WormholeQueueNameFormatter.user_queue_to_wh_queue(q) for q in channel_queue_names]
+        result = self.__channel.pop_next(self.id, channel_queue_names, timeout)
+        did_timeout = result is None
+        if did_timeout:
+            return WormholeWaitResult(None, None, None)
+        popped_wh_queue_name, message_id, data = result
+        popped_user_queue_name = WormholeQueueNameFormatter.wh_queue_to_user_queu(popped_wh_queue_name)
+
+        def reply_func(data, is_error=False):
+            nonlocal self
+            self.channel.reply(message_id, data, is_error)
+
+        item = waitable_by_queue[popped_user_queue_name].item
+        tag = waitable_by_queue[popped_user_queue_name].tag
+        wait_result = WormholeWaitResult(item, data, reply_func, tag)
+
+        return wait_result
+
     def stop(self, wait=True):
         self.send(self.__receiver_id, 'stop')
         if wait:
-            while self.__running is True:
+            while self.__state != WormholeState.INACTIVE:
                 self.sleep(0.1)
 
     def unregister_all_handlers(self):
-        self.__handlers.clear()
+        for queue_name in list(self.__handlers.keys()):
+            if queue_name == self.__receiver_id:
+                continue
+            self.send(self.id, 'refresh')
+            del self.__handlers[queue_name]
 
     def register_all_handlers_of_instance(self, instance: object):
         for attr_name in dir(instance):
@@ -143,7 +172,8 @@ class BasicWormhole:
     def send(self, queue_name: str, data: Any, tag: Optional[str] = None):
         queue_name = merge_queue_name_with_tag(queue_name, tag)
         wh_queue_name = WormholeQueueNameFormatter.user_queue_to_wh_queue(queue_name)
-        return self.__channel.send(wh_queue_name, data)
+        message_id = self.__channel.send(wh_queue_name, data)
+        return WormholeSession(message_id, self)
 
     def __get_handler_by_queue_names(self) -> Dict[str, Callable]:
         handlers_by_queue_name: Dict[str, Callable] = {}
@@ -175,7 +205,7 @@ class BasicWormhole:
     def __internal_handler_private_queue(self, data: bytes):
         command = data
         if command == 'stop':
-            self.__running = False
+            self.__state = WormholeState.DEACTIVATING
 
     def __register_internal_handlers(self):
         self.__handlers[self.__receiver_id] = self.__internal_handler_private_queue
