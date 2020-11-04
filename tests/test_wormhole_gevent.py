@@ -105,9 +105,8 @@ class TestWormholeGevent(BaseTestWormholeGevent):
 
     def test_simple(self):
         promises = []
-        for i in range(0, 30):
+        for i in range(0, 100):
             m = Vector3Message(i, i * 2, i * i)
-            m.delay = 0.1
             p = m.send(wormhole=self.wormhole)
             promises.append((m, p))
         for m, p in promises:
@@ -115,9 +114,9 @@ class TestWormholeGevent(BaseTestWormholeGevent):
 
     def test_delayed_simple(self):
         promises = []
-        for i in range(0, 30):
+        for i in range(0, 20):
             m = Vector3Message(i, i * 2, i * i)
-            m.delay = 1
+            m.delay = 0.2
             p = m.send(wormhole=self.wormhole)
             promises.append((m, p))
         for m, p in promises:
@@ -161,4 +160,4 @@ class TestWormholeGevent(BaseTestWormholeGevent):
         assert async_result.wait() == dummy_data
         # Send one more time and make sure we timeout
         with pytest.raises(WormholeHandlingError):
-            self.wormhole.send("asd", dummy_data).wait(timeout=2)
+            self.wormhole.send("asd", dummy_data).wait(timeout=1)
