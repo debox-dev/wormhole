@@ -14,6 +14,10 @@ class WormholeHandlingError(BaseWormholeException):
     pass
 
 
+class WormholeChannelError(BaseWormholeException):
+    pass
+
+
 class AbstractWormholeChannel:
     def pop_next(self, wh_receiver_id: str, queue_names: List[str], timeout: int = 0) -> \
             Optional[Tuple[str, Union[str, bytes]]]:
@@ -27,6 +31,9 @@ class AbstractWormholeChannel:
 
     def wait_for_reply(self, message_id: str, timeout: int = 30) -> Tuple[bool, Any, str]:
         """Returns tuple(isSuccess, data)"""
+        raise NotImplementedError()
+
+    def close(self):
         raise NotImplementedError()
 
 
@@ -75,8 +82,11 @@ class WormholeRedisChannel(AbstractWormholeChannel):
     def __init__(self, redis_uri: str = "redis://localhost:6379/1", max_connections=10):
         self.__connection_pool = BlockingConnectionPool.from_url(redis_uri, max_connections=max_connections)
         self.__encoder = WormholePickleEncoder()
+        self.__closed = False
 
     def __get_rdb(self):
+        if self.__closed:
+            raise WormholeChannelError("Wormhole channel was closed, cannot use")
         return redis.Redis(connection_pool=self.__connection_pool)
 
     def send(self, queue_name: str, data: Any,
@@ -155,6 +165,10 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         except KeyError:
             raise KeyError(f"Message {result_message_id} payload missing data: {repr(result_payload)}")
         return result_queue_name, result_message_id, self.__encoder.decode(message_data)
+
+    def close(self):
+        self.__closed = True
+        self.__connection_pool.disconnect()
 
 
 def create_default_channel():

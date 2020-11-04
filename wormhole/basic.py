@@ -1,4 +1,5 @@
-﻿from typing import *
+﻿import time
+from typing import *
 
 from .error import BaseWormholeException
 from .registry import PRINT_HANDLER_EXCEPTIONS
@@ -57,6 +58,10 @@ class BasicWormhole:
         self.__register_internal_handlers()
 
     @property
+    def channel(self):
+        return self.__channel
+
+    @property
     def id(self) -> str:
         return self.__receiver_id
 
@@ -68,14 +73,34 @@ class BasicWormhole:
         self.__running = True
         while self.__running:
             self.__pop_and_handle_next(1)
-        self.__handlers.clear()
+        self.unregister_all_handlers()
+        self.__running = False
 
     def process_async(self):
         raise NotImplementedError("Please use an async implementation like GeventWormhole")
 
-    def stop(self):
-        self.__running = False
-        self.send(self.__receiver_id, '')
+    def sleep(self, duration):
+        time.sleep(duration)
+
+    def stop(self, wait=True):
+        self.send(self.__receiver_id, 'stop')
+        if wait:
+            while self.__running is True:
+                self.sleep(0.1)
+
+    def unregister_all_handlers(self):
+        self.__handlers.clear()
+
+    def register_all_handlers_of_instance(self, instance: object):
+        for attr_name in dir(instance):
+            attr = getattr(instance, attr_name)
+            if not callable(attr):
+                continue
+            if not hasattr(attr, 'wormhole_handler'):
+                continue
+            wormhole_queue_name = getattr(attr, 'wormhole_queue_name')
+            wormhole_queue_tag = getattr(attr, 'wormhole_queue_tag')
+            self.register_handler(wormhole_queue_name, attr, wormhole_queue_tag)
 
     def register_message_handler(self, message_class: Type["WormholeMessage"], handler_func: Callable,
                                  queue_name: Optional[str] = None, tag: Optional[str] = None):
@@ -132,7 +157,7 @@ class BasicWormhole:
         handlers = self.__get_handler_by_queue_names()
         channel_queue_names = [WormholeQueueNameFormatter.user_queue_to_wh_queue(q) for q in handlers.keys()]
         result = self.__channel.pop_next(self.id, channel_queue_names, timeout)
-        
+
         did_timeout = result is None
         if did_timeout:
             return
@@ -150,8 +175,7 @@ class BasicWormhole:
     def __internal_handler_private_queue(self, data: bytes):
         command = data
         if command == 'stop':
-            self.stop()
-            self.send(self.__receiver_id, 'stop')
+            self.__running = False
 
     def __register_internal_handlers(self):
         self.__handlers[self.__receiver_id] = self.__internal_handler_private_queue

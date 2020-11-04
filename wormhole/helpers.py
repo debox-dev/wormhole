@@ -19,7 +19,7 @@ def register_handler_instance(instance: object):
         if wormhole is None:
             wormhole = get_primary_wormhole()
         wormhole.register_handler(wormhole_queue_name, attr, wormhole_queue_tag)
-
+        
 
 # Decorator
 def wormhole_handler(queue_name: str, **kwargs):
