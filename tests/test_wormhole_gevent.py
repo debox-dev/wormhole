@@ -1,4 +1,5 @@
-﻿import pytest
+﻿import gevent
+import pytest
 import redis
 
 from tests.test_objects import Vector3Handler, Vector3Message
@@ -31,6 +32,9 @@ class BaseTestWormholeGevent:
     wormhole_channel: Optional[AbstractWormholeChannel]
 
     def setup_method(self):
+        rdb = redis.Redis.from_url(self.TEST_REDIS)
+        rdb.flushdb()
+        rdb.close()
         self.wormhole_channel = WormholeRedisChannel(self.TEST_REDIS, max_connections=10)
         self.wormhole = GeventWormhole(self.wormhole_channel)
         handler = Vector3Handler()
@@ -44,7 +48,7 @@ class BaseTestWormholeGevent:
         self.wormhole_channel = None
 
 
-class TestWormholeGeventSession(BaseTestWormholeGevent):
+class TestWormholeGeventSessionAndGroups(BaseTestWormholeGevent):
     wormholes: List[GeventWormhole]
     channels: List[WormholeRedisChannel]
 
@@ -53,7 +57,7 @@ class TestWormholeGeventSession(BaseTestWormholeGevent):
         # start many wormholes and channels so there will be a chance for the test to fail on wrong receiver id
         self.channels = []
         self.wormholes = []
-        for _ in range(3):
+        for _ in range(5):
             ch = WormholeRedisChannel(self.TEST_REDIS, max_connections=10)
             self.channels.append(ch)
             wh = GeventWormhole(ch)
@@ -70,6 +74,32 @@ class TestWormholeGeventSession(BaseTestWormholeGevent):
             ch.close()
         self.channels = []
         self.wormholes = []
+
+    def test_groups(self):
+        group_name = "group111"
+        group_name2 = "group222"
+        self.wormhole.add_to_group(group_name).wait()
+        assert self.wormhole.id in self.wormhole.channel.find_group_members(group_name)
+        Vector3Message(2, 5, 6).send(wormhole=self.wormhole, group=group_name).wait()
+        self.wormhole.add_to_group(group_name2).wait()
+        Vector3Message(2, 5, 6).send(wormhole=self.wormhole, group=group_name2).wait()
+        self.wormhole.remove_from_group(group_name).wait()
+        assert self.wormhole.id not in self.wormhole.channel.find_group_members(group_name)
+        async_result = Vector3Message(2, 5, 6).send(wormhole=self.wormhole, group=group_name)
+        gevent.sleep(1)
+        assert not async_result.poll()
+        Vector3Message(2, 5, 6).send(wormhole=self.wormhole, group=group_name2).wait()
+
+    def test_group_multi(self):
+        group_name = "mass_group"
+        # add all to the group
+        [r.wait() for r in list([wh.add_to_group(group_name) for wh in self.wormholes])]
+        results = []
+        for _ in range(400):
+            results.append(Vector3Message(2, 5, 6).send(wormhole=self.wormhole, group=group_name))
+        for r in results:
+            r.wait()
+        assert len(set([r.receiver_id for r in results])) == 5
 
     def test_session_simple(self):
         self.wormhole.process_async()

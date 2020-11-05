@@ -1,4 +1,5 @@
-﻿import time
+﻿import re
+import time
 import struct
 from enum import Enum, auto
 from typing import *
@@ -6,7 +7,7 @@ from typing import *
 from .error import WormholeInvalidQueueName, WormholeHandlerAlreadyExists, WormholeHandlerNotRegistered
 from .registry import PRINT_HANDLER_EXCEPTIONS
 from .session import WormholeSession
-from .utils import generate_uid, merge_queue_name_with_tag
+from .utils import generate_uid
 from .waitable import WormholeWaitable
 from .message import WormholeMessage
 from .error import WormholeHandlingError
@@ -21,18 +22,50 @@ class WormholeState(Enum):
     DEACTIVATING = auto()
 
 
-class WormholeQueueNameFormatter:
-    PREFIX = "wh:"
+class WormholeQueue:
+    PREFIX = "wh://"
+    URI_RE = re.compile(f"^{PREFIX}([^:/]+)(:([^/]+))?(/([^/]+))?$")
+
+    def __init__(self, base_queue_name: str, tag: Optional[str] = None, group: Optional[str] = None):
+        self.group = group
+        self.tag = tag
+        self.base_queue_name = base_queue_name
+
+    def copy(self):
+        return WormholeQueue(self.base_queue_name, self.tag, self.group)
 
     @classmethod
-    def user_queue_to_wh_queue(cls, user_queue_name: str):
-        return f"{cls.PREFIX}{user_queue_name}"
+    def format(cls, queue_name: str, tag: Optional[str] = None, group: Optional[str] = None):
+        result = f"{cls.PREFIX}{queue_name}"
+        if group is not None:
+            result += f":{group}"
+        if tag is not None:
+            result += f"/{tag}"
+        return result
+
+    def __str__(self):
+        return self.format(self.base_queue_name, self.tag, self.group)
 
     @classmethod
-    def wh_queue_to_user_queu(cls, wh_queue_name: str):
-        if not wh_queue_name.startswith(cls.PREFIX):
-            raise WormholeInvalidQueueName(wh_queue_name)
-        return wh_queue_name[len(cls.PREFIX):]
+    def chop_group(cls, uri: str):
+        queue_name, tag_name, group_name = cls.parse_uri(uri)
+        return cls.format(queue_name, tag_name)
+
+    @classmethod
+    def parse_uri(cls, uri: str) -> Tuple[str, str, str]:
+        re_match = cls.URI_RE.match(uri)
+        if re_match is None:
+            raise ValueError(f"Invalid queue URI: '{uri}'")
+        queue_name, _, group_name, _, tag_name = re_match.groups()
+        return queue_name, tag_name, group_name
+
+    @classmethod
+    def from_string(cls, uri: str):
+        queue_name, tag_name, group_name = cls.parse_uri(uri)
+        return cls(queue_name, tag_name, group_name)
+
+    def __hash__(self):
+        return hash(str(self))
 
 
 class WormholeWaitResult:
@@ -55,7 +88,8 @@ class BasicWormhole:
         self.__channel = channel
         self.__state: WormholeState = WormholeState.INACTIVE
         self.__receiver_id = generate_uid()
-        self.__register_internal_handlers()
+        self.__groups: Set[str] = set()
+        self.__previous_groups: Set[str] = set()
 
     @property
     def channel(self):
@@ -73,9 +107,17 @@ class BasicWormhole:
         self.__state = WormholeState.ACTIVE
         while self.__state == WormholeState.ACTIVE:
             self.__pop_and_handle_next(1)
-
+        self.__groups.clear()
         self.unregister_all_handlers()
         self.__state = WormholeState.INACTIVE
+
+    def add_to_group(self, group_name: str):
+        self.__groups.add(group_name)
+        return self.__send_refresh()
+
+    def remove_from_group(self, group_name: str):
+        self.__groups.remove(group_name)
+        return self.__send_refresh()
 
     def process_async(self, max_parallel: int = 0):
         raise NotImplementedError("Please use an async implementation like GeventWormhole")
@@ -89,23 +131,21 @@ class BasicWormhole:
         waitable_by_queue: Dict[str, WormholeWaitable] = dict()
         for item in args:
             waitable = WormholeWaitable.from_item(item)
-            queue_name = merge_queue_name_with_tag(waitable.queue_name, waitable.tag)
+            queue_name = WormholeQueue.format(waitable.queue_name, waitable.tag)
             channel_queue_names.append(queue_name)
             waitable_by_queue[queue_name] = waitable
-        channel_queue_names = [WormholeQueueNameFormatter.user_queue_to_wh_queue(q) for q in channel_queue_names]
         result = self.__channel.pop_next(self.id, channel_queue_names, timeout)
         did_timeout = result is None
         if did_timeout:
             return WormholeWaitResult(None, None, None)
-        popped_wh_queue_name, message_id, data = result
-        popped_user_queue_name = WormholeQueueNameFormatter.wh_queue_to_user_queu(popped_wh_queue_name)
+        queue_name, message_id, data = result
 
         def reply_func(data, is_error=False):
             nonlocal self
             self.channel.reply(message_id, data, is_error)
 
-        item = waitable_by_queue[popped_user_queue_name].item
-        tag = waitable_by_queue[popped_user_queue_name].tag
+        item = waitable_by_queue[queue_name].item
+        tag = waitable_by_queue[queue_name].tag
         wait_result = WormholeWaitResult(item, data, reply_func, tag)
 
         return wait_result
@@ -125,12 +165,13 @@ class BasicWormhole:
             while self.__state != WormholeState.INACTIVE:
                 self.sleep(0.1)
 
+    def __send_refresh(self):
+        return self.send(self.id, b"r")
+
     def unregister_all_handlers(self):
         for queue_name in list(self.__handlers.keys()):
-            if queue_name == self.__receiver_id:
-                continue
-            self.send(self.id, b"r")
             del self.__handlers[queue_name]
+        self.__send_refresh()
 
     def register_all_handlers_of_instance(self, instance: object):
         for attr_name in dir(instance):
@@ -156,13 +197,13 @@ class BasicWormhole:
         self.unregister_handler(queue_name, tag)
 
     def register_handler(self, queue_name: str, handler_func: Callable, tag: Optional[str] = None):
-        queue_name = merge_queue_name_with_tag(queue_name, tag)
+        queue_name = WormholeQueue.format(queue_name, tag)
         if queue_name in self.__handlers:
             raise WormholeHandlerAlreadyExists(queue_name)
         self.__handlers[queue_name] = handler_func
 
     def unregister_handler(self, queue_name: str, tag: Optional[str] = None):
-        queue_name = merge_queue_name_with_tag(queue_name, tag)
+        queue_name = WormholeQueue.format(queue_name, tag)
         if queue_name not in self.__handlers:
             raise WormholeHandlerNotRegistered(queue_name)
         del self.__handlers[queue_name]
@@ -182,17 +223,17 @@ class BasicWormhole:
             on_response(str(e), True)
 
     def send(self, queue_name: str, data: Any, tag: Union[None, str, WormholeSession] = None,
-             session: Optional[WormholeSession] = None):
-        if session is not None:
-            if tag is not None:
-                raise WormholeHandlingError("Cannot specify both tag and session when sending")
-            tag = session
+             session: Optional[WormholeSession] = None, group: Optional[str] = None):
         if isinstance(tag, WormholeSession):
-            tag = tag.receiver_id
+            session = tag
+            tag = None
+        if session is not None:
+            if tag is not None or group is not None:
+                raise WormholeHandlingError("Cannot specify both tag/group and session when sending")
+            group = session.receiver_id
 
-        queue_name = merge_queue_name_with_tag(queue_name, tag)
-        wh_queue_name = WormholeQueueNameFormatter.user_queue_to_wh_queue(queue_name)
-        message_id = self.__channel.send(wh_queue_name, data)
+        queue_name = WormholeQueue.format(queue_name, tag, group)
+        message_id = self.__channel.send(queue_name, data)
         return WormholeSession(message_id, self)
 
     def __get_handler_by_queue_names(self) -> Dict[str, Callable]:
@@ -205,16 +246,32 @@ class BasicWormhole:
 
     def __pop_and_handle_next(self, timeout: int = 5) -> None:
         handlers = self.__get_handler_by_queue_names()
-        channel_queue_names = [WormholeQueueNameFormatter.user_queue_to_wh_queue(q) for q in handlers.keys()]
+        channel_queue_names: List[str] = []
+        for queue_name in handlers.keys():
+            wh_queue = WormholeQueue.from_string(queue_name)
+            channel_queue_names.append(queue_name)
+            for group_name in self.__groups | {self.id}:
+                wh_queue.group = group_name
+                channel_queue_names.append(str(wh_queue))
+        internal_channel = WormholeQueue.format(self.id)
+        channel_queue_names.append(internal_channel)
+        remove_from_groups = list(self.__previous_groups - self.__groups)
+        if len(remove_from_groups) > 0:
+            self.__channel.remove_from_groups(remove_from_groups, self.id)
+        self.__previous_groups = set(self.__groups)
+        self.__channel.touch_for_groups(list(self.__groups), self.id, timeout + 5)
         result = self.__channel.pop_next(self.id, channel_queue_names, timeout)
 
         did_timeout = result is None
         if did_timeout:
             return
-        popped_wh_queue_name, message_id, data = result
-        popped_user_queue_name = WormholeQueueNameFormatter.wh_queue_to_user_queu(popped_wh_queue_name)
-
-        handler_func = handlers[popped_user_queue_name]
+        popped_queue_name, message_id, data = result
+        wh_queue = WormholeQueue.from_string(popped_queue_name)
+        wh_queue.group = None
+        if wh_queue.base_queue_name == self.__receiver_id:
+            handler_func = self.__internal_handler_private_queue
+        else:
+            handler_func = handlers[str(wh_queue)]
         self.execute_handler(handler_func, data,
                              lambda d, e: self.__on_handler__response(message_id, d, e))
 
@@ -233,6 +290,3 @@ class BasicWormhole:
             pass
         else:
             raise WormholeHandlingError(f"No such command: {repr(data)}")
-
-    def __register_internal_handlers(self):
-        self.__handlers[self.__receiver_id] = self.__internal_handler_private_queue
