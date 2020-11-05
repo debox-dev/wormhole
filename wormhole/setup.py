@@ -18,14 +18,14 @@ class WormholeSetupError(BaseWormholeException):
 
 
 def basic_wormhole_setup(channel_uri: str = "redis://localhost:6379/1",
-                         async_type: WormholeAsyncType = WormholeAsyncType.NONE):
+                         async_type: Union[WormholeAsyncType, str] = WormholeAsyncType.NONE):
     if get_primary_wormhole() is not None:
         raise WormholeSetupError("Primary wormhole already set up")
     channel = WormholeRedisChannel(channel_uri)
     wormhole: Optional[BasicWormhole] = None
     if async_type == WormholeAsyncType.NONE:
         wormhole = BasicWormhole(channel)
-    if async_type:
+    if async_type in ("gevent", WormholeAsyncType.GEVENT):
         from .async_implementations.async_gevent import GeventWormhole
         wormhole = GeventWormhole(channel)
     if wormhole is None:

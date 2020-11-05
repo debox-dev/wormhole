@@ -8,7 +8,7 @@ from typing import *
 
 
 class GeventWormhole(BasicWormhole):
-    PARALLEL: bool
+    PARALLEL: bool = False
     max_parallel: Optional[int]
     __greenlet = None
     __current_handling_count = 0

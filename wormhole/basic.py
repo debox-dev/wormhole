@@ -76,8 +76,8 @@ class BasicWormhole:
 
         self.unregister_all_handlers()
         self.__state = WormholeState.INACTIVE
-        
-    def process_async(self):
+
+    def process_async(self, max_parallel: int = 0):
         raise NotImplementedError("Please use an async implementation like GeventWormhole")
 
     def sleep(self, duration):
@@ -181,7 +181,15 @@ class BasicWormhole:
                 print("=" * 80)
             on_response(str(e), True)
 
-    def send(self, queue_name: str, data: Any, tag: Optional[str] = None):
+    def send(self, queue_name: str, data: Any, tag: Union[None, str, WormholeSession] = None,
+             session: Optional[WormholeSession] = None):
+        if session is not None:
+            if tag is not None:
+                raise WormholeHandlingError("Cannot specify both tag and session when sending")
+            tag = session
+        if isinstance(tag, WormholeSession):
+            tag = tag.receiver_id
+
         queue_name = merge_queue_name_with_tag(queue_name, tag)
         wh_queue_name = WormholeQueueNameFormatter.user_queue_to_wh_queue(queue_name)
         message_id = self.__channel.send(wh_queue_name, data)
