@@ -24,18 +24,24 @@ class TestRedisChannel:
 
     def test_locks(self):
         lock1_name = "lock1"
-        did_lock = self.tested_channel.lock(lock1_name)
-        assert did_lock
+        secret = self.tested_channel.lock(lock1_name)
+        assert secret
         assert self.tested_channel.is_locked(lock1_name)
         assert not self.tested_channel.lock(lock1_name, block=False)
         assert not self.tested_channel.lock(lock1_name, block_timeout=1)
-        self.tested_channel.release(lock1_name)
+        assert self.tested_channel.release(lock1_name, secret)
         assert not self.tested_channel.is_locked(lock1_name)
         # test lock timeout
-        did_lock = self.tested_channel.lock(lock1_name, lock_timeout=1)
-        assert did_lock
+        secret = self.tested_channel.lock(lock1_name, lock_timeout=1)
+        assert secret
         assert self.tested_channel.is_locked(lock1_name)
         time.sleep(1.1)
+        assert not self.tested_channel.is_locked(lock1_name)
+        assert not self.tested_channel.release(lock1_name, secret)
+        # Test release with forces
+        assert self.tested_channel.lock(lock1_name)
+        assert self.tested_channel.is_locked(lock1_name)
+        assert self.tested_channel.release(lock1_name, "invalid_secret", force=True)
         assert not self.tested_channel.is_locked(lock1_name)
 
     def test_core_send_and_reply_str(self):

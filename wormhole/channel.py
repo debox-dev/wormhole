@@ -37,10 +37,10 @@ class AbstractWormholeChannel:
     def remove_from_groups(self, group_names: List[str], receiver_id: str):
         raise NotImplementedError()
 
-    def lock(self, lock_name: str, block: bool = True, block_timeout: int = 0, lock_timeout: int = 0):
+    def lock(self, lock_name: str, block: bool = True, block_timeout: int = 0, lock_timeout: int = 0) -> Optional[str]:
         raise NotImplementedError()
 
-    def release(self, lock_name: str):
+    def release(self, lock_name: str, lock_secret: str, force=False):
         raise NotImplementedError()
 
     def is_locked(self, lock_name: str):
@@ -176,23 +176,30 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         self.__closed = True
         self.__connection_pool.disconnect()
 
-    def lock(self, lock_name: str, block: bool = True, block_timeout: int = 0,  lock_timeout: int = 0):
+    def lock(self, lock_name: str, block: bool = True, block_timeout: int = 0, lock_timeout: int = 0) -> Optional[str]:
+        lock_secret = generate_uid()
         key = self.__get_lock_key(lock_name)
-        while not self.__get_rdb().setnx(key, 1):
+        while not self.__get_rdb().setnx(key, lock_secret):
             if not block:
-                return False
+                return None
             result = self.__get_rdb().brpop(self.__get_lock_signal_key(lock_name), timeout=block_timeout)
             if result is None:  # Timeout
-                return False
+                return None
         if lock_timeout > 0:
             self.__get_rdb().expire(key, lock_timeout)
-        return True
+        return lock_secret
 
-    def release(self, lock_name: str):
+    def release(self, lock_name: str, lock_secret: str, force=False):
         key = self.__get_lock_key(lock_name)
+        locker_secret: bytes = self.__get_rdb().get(key)
+        if locker_secret is None:
+            return False  # not locked
+        if not force and locker_secret.decode() != lock_secret:
+            raise KeyError("Invalid lock secret, not the owner of this lock")
         self.__get_rdb().delete(key)
         self.__get_rdb().lpush(self.__get_lock_signal_key(lock_name), 1)
         self.__get_rdb().expire(key, 10)
+        return True
 
     def is_locked(self, lock_name: str):
         key = self.__get_lock_key(lock_name)
