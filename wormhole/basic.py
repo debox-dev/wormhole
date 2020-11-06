@@ -111,13 +111,15 @@ class BasicWormhole:
         return self.__state != WormholeState.INACTIVE
 
     def process_blocking(self):
+        if self.__state == WormholeState.ACTIVE:
+            raise RuntimeError("Already processing")
         self.__state = WormholeState.ACTIVE
         self.__processing_start_time = time.time()
         while self.__state == WormholeState.ACTIVE:
             self.__pop_and_handle_next(1)
         self.__processing_start_time = None
         self.__groups.clear()
-        self.unregister_all_handlers()
+        self.__handlers.clear()
         self.__state = WormholeState.INACTIVE
 
     def add_to_group(self, group_name: str):
@@ -183,8 +185,7 @@ class BasicWormhole:
         return self.send(self.id, b"r")
 
     def unregister_all_handlers(self):
-        for queue_name in list(self.__handlers.keys()):
-            del self.__handlers[queue_name]
+        self.__handlers.clear()
         if self.__channel.is_open():
             self.__send_refresh()
 

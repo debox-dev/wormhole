@@ -103,7 +103,6 @@ class TestWormholeGeventSessionAndGroups(BaseTestWormholeGevent):
         assert len(set([r.receiver_id for r in results])) == 5
 
     def test_session_simple(self):
-        self.wormhole.process_async()
         i = 1
         m = Vector3Message(i, i * 2, i * i)
         session = m.send(wormhole=self.wormhole)
