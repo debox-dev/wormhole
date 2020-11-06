@@ -10,3 +10,4 @@ class SumMessage(WormholeMessage):
 
 wormhole = basic_wormhole_setup()
 assert SumMessage([1, 2, 3]).send().wait() == 6
+assert wormhole.send("multiply", 5).wait() == 10
