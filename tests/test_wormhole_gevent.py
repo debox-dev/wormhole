@@ -12,6 +12,7 @@ from gevent.monkey import patch_all
 from typing import *
 
 from wormhole.message import WormholeMessage
+from wormhole.utils import wait_all
 
 patch_all()
 
@@ -96,13 +97,10 @@ class TestWormholeGeventSessionAndGroups(BaseTestWormholeGevent):
     def test_group_multi(self):
         group_name = "mass_group"
         # add all to the group
-        [r.wait() for r in list([wh.add_to_group(group_name) for wh in self.wormholes])]
-        results = []
-        for _ in range(400):
-            results.append(Vector3Message(2, 5, 6).send(wormhole=self.wormhole, group=group_name))
-        for r in results:
-            r.wait()
-        assert len(set([r.receiver_id for r in results])) == 5
+        wait_all([wh.add_to_group(group_name) for wh in self.wormholes])
+        sessions = [Vector3Message(2, 5, 6).send(wormhole=self.wormhole, group=group_name) for _ in range(400)]
+        wait_all(sessions)
+        assert len(set([s.receiver_id for s in sessions])) == 5
 
     def test_session_simple(self):
         i = 1
@@ -136,16 +134,15 @@ class TestWormholeGevent(BaseTestWormholeGevent):
             assert delay < 0.05
 
     def test_simple(self):
-        promises = []
-        for i in range(0, 100):
-            m = Vector3Message(i, i * 2, i * i)
-            p = m.send(wormhole=self.wormhole)
-            promises.append((m, p))
-        for m, p in promises:
-            assert p.wait() == m.magnitude
+        messages = [Vector3Message(i, i * 2, i * i) for i in range(100)]
+        promises = [m.send(wormhole=self.wormhole) for m in messages]
+        message_promise_couples = zip(messages, promises)
+        assert all([p.wait() == m.magnitude for m, p in message_promise_couples])
 
     def test_uptime(self):
-        gevent.sleep(3)
+        gevent.sleep(1)
+        assert self.wormhole.uptime(self.wormhole.id) >= 1
+        gevent.sleep(2)
         assert self.wormhole.uptime(self.wormhole.id) >= 3
 
     def test_delayed_simple(self):
