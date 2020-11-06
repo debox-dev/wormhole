@@ -16,7 +16,7 @@ setup(
     description = ("Minimal RPC and message distribution framework"),
     license = "MIT",
     install_requires = ["redis>=3.3.11"],
-    keywords = "",
+    keywords = "wormhole rdisq redis messaging",
     packages=find_packages(),
     long_description="Please see README.md",
     url="https://github.com/debox-dev/wormhole",
