@@ -2,11 +2,13 @@
 
 Super minimal framework for RPC and messaging over redis in python
 
+Wormhole is based on [gregie156's version of rdisq](https://github.com/gregie156/rdisq)
+
 ## Why?
-Fun and learning, also it is much easier to setup comparing to other cloud-messaging solutions and it is fast!
+Fun and learning, it's easy, it's simple, it's fast!
+
 
 ## Quick start
-
 
 *Receiver*
 ```
