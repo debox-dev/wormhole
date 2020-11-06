@@ -53,7 +53,7 @@ class BaseTestWormholeGevent:
         self.wormhole_channel = None
 
 
-class TestWormholeGeventSessionAndGroups(BaseTestWormholeGevent):
+class TestMultipleWormhole(BaseTestWormholeGevent):
     wormholes: List[GeventWormhole]
     channels: List[WormholeRedisChannel]
 

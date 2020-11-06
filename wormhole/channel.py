@@ -37,6 +37,15 @@ class AbstractWormholeChannel:
     def remove_from_groups(self, group_names: List[str], receiver_id: str):
         raise NotImplementedError()
 
+    def lock(self, lock_name: str, block: bool = True, block_timeout: int = 0, lock_timeout: int = 0):
+        raise NotImplementedError()
+
+    def release(self, lock_name: str):
+        raise NotImplementedError()
+
+    def is_locked(self, lock_name: str):
+        raise NotImplementedError()
+
 
 class WormholeRedisChannel(AbstractWormholeChannel):
     MESSAGE_DATA_HKEY = "in"
@@ -44,6 +53,8 @@ class WormholeRedisChannel(AbstractWormholeChannel):
     MESSAGE_ERROR_HKEY = "err"
     MESSAGE_WORMHOLE_RECEIVER_ID_HKEY = "hid"
     GROUP_REGISTRY_PREFIX = "whgm://"
+    LOCK_PREFIX = "whlk://"
+    LOCK_SIGNAL_PREFIX = "whlks://"
 
     def __init__(self, redis_uri: str = "redis://localhost:6379/1", max_connections=20):
         self.__connection_pool = BlockingConnectionPool.from_url(redis_uri, max_connections=max_connections)
@@ -164,6 +175,34 @@ class WormholeRedisChannel(AbstractWormholeChannel):
     def close(self):
         self.__closed = True
         self.__connection_pool.disconnect()
+
+    def lock(self, lock_name: str, block: bool = True, block_timeout: int = 0,  lock_timeout: int = 0):
+        key = self.__get_lock_key(lock_name)
+        while not self.__get_rdb().setnx(key, 1):
+            if not block:
+                return False
+            result = self.__get_rdb().brpop(self.__get_lock_signal_key(lock_name), timeout=block_timeout)
+            if result is None:  # Timeout
+                return False
+        if lock_timeout > 0:
+            self.__get_rdb().expire(key, lock_timeout)
+        return True
+
+    def release(self, lock_name: str):
+        key = self.__get_lock_key(lock_name)
+        self.__get_rdb().delete(key)
+        self.__get_rdb().lpush(self.__get_lock_signal_key(lock_name), 1)
+        self.__get_rdb().expire(key, 10)
+
+    def is_locked(self, lock_name: str):
+        key = self.__get_lock_key(lock_name)
+        return self.__get_rdb().exists(key)
+
+    def __get_lock_key(self, lock_name: str):
+        return f"{self.LOCK_PREFIX}{lock_name}"
+
+    def __get_lock_signal_key(self, lock_name: str):
+        return f"{self.LOCK_SIGNAL_PREFIX}{lock_name}"
 
 
 def create_default_channel():

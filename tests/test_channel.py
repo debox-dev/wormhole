@@ -1,4 +1,5 @@
-﻿import redis
+﻿import time
+import redis
 
 from tests.test_objects import Vector3
 from wormhole.channel import WormholeRedisChannel
@@ -20,6 +21,22 @@ class TestRedisChannel:
         self.redis_client.flushdb()
         self.redis_client = None
         self.tested_channel = None
+
+    def test_locks(self):
+        lock1_name = "lock1"
+        did_lock = self.tested_channel.lock(lock1_name)
+        assert did_lock
+        assert self.tested_channel.is_locked(lock1_name)
+        assert not self.tested_channel.lock(lock1_name, block=False)
+        assert not self.tested_channel.lock(lock1_name, block_timeout=1)
+        self.tested_channel.release(lock1_name)
+        assert not self.tested_channel.is_locked(lock1_name)
+        # test lock timeout
+        did_lock = self.tested_channel.lock(lock1_name, lock_timeout=1)
+        assert did_lock
+        assert self.tested_channel.is_locked(lock1_name)
+        time.sleep(1.1)
+        assert not self.tested_channel.is_locked(lock1_name)
 
     def test_core_send_and_reply_str(self):
         imaginary_receiver_id = "receiver1"
