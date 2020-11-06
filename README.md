@@ -1,6 +1,6 @@
 ﻿# Wormhole
 
-Super minimal framework for RPC and messaging over redis in python
+Minimal framework for RPC and messaging in python
 
 Wormhole is based on [gregie156's version of rdisq](https://github.com/gregie156/rdisq)
 
@@ -57,3 +57,6 @@ result_sum = session.wait()
 print("Sum: " + str(wormhole.send("sum", [5,5,5], session=session).wait())
 
 ```
+
+## More neat tricks..receiver
+Wormhole can do much more, but the documentation is still incomplete, see the examples folder
