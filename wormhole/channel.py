@@ -11,6 +11,9 @@ from wormhole.utils import generate_uid
 
 
 class AbstractWormholeChannel:
+    def is_open(self):
+        raise NotImplementedError()
+
     def pop_next(self, wh_receiver_id: str, queue_names: List[str], timeout: int = 0) -> \
             Optional[Tuple[str, Union[str, bytes]]]:
         raise NotImplementedError()
@@ -36,7 +39,6 @@ class AbstractWormholeChannel:
 
 
 class WormholeRedisChannel(AbstractWormholeChannel):
-
     MESSAGE_DATA_HKEY = "in"
     MESSAGE_RESPONSE_HKEY = "out"
     MESSAGE_ERROR_HKEY = "err"
@@ -47,6 +49,9 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         self.__connection_pool = BlockingConnectionPool.from_url(redis_uri, max_connections=max_connections)
         self.__encoder = WormholePickleEncoder()
         self.__closed = False
+
+    def is_open(self):
+        return not self.__closed
 
     def __get_rdb(self):
         if self.__closed:

@@ -4,6 +4,7 @@ import struct
 from enum import Enum, auto
 from typing import *
 
+from .command import WormholeCommand, WormholePingCommand
 from .error import WormholeInvalidQueueName, WormholeHandlerAlreadyExists, WormholeHandlerNotRegistered
 from .registry import PRINT_HANDLER_EXCEPTIONS
 from .session import WormholeSession
@@ -80,6 +81,8 @@ class WormholeWaitResult:
 class BasicWormhole:
     POP_TIMEOUT = 1
 
+    BUILT_IN_COMMANDS = [WormholePingCommand]
+
     def __init__(self, channel: Optional["AbstractWormholeChannel"] = None):
         if channel is None:
             from .channel import create_default_channel
@@ -90,6 +93,10 @@ class BasicWormhole:
         self.__receiver_id = generate_uid()
         self.__groups: Set[str] = set()
         self.__previous_groups: Set[str] = set()
+        self.__processing_start_time: Optional[float] = None
+        self.__commands: Dict[int, Type[WormholeCommand]] = {}
+        for command in self.BUILT_IN_COMMANDS:
+            self.learn_command(command)
 
     @property
     def channel(self):
@@ -105,8 +112,10 @@ class BasicWormhole:
 
     def process_blocking(self):
         self.__state = WormholeState.ACTIVE
+        self.__processing_start_time = time.time()
         while self.__state == WormholeState.ACTIVE:
             self.__pop_and_handle_next(1)
+        self.__processing_start_time = None
         self.__groups.clear()
         self.unregister_all_handlers()
         self.__state = WormholeState.INACTIVE
@@ -118,6 +127,9 @@ class BasicWormhole:
     def remove_from_group(self, group_name: str):
         self.__groups.remove(group_name)
         return self.__send_refresh()
+
+    def find_group_members(self, group_name: str):
+        return self.__channel.find_group_members(group_name)
 
     def process_async(self, max_parallel: int = 0):
         raise NotImplementedError("Please use an async implementation like GeventWormhole")
@@ -151,16 +163,18 @@ class BasicWormhole:
         return wait_result
 
     def ping(self, receiver_id: str):
-        original_send_time = time.time()
-        send_time_data = self.send(receiver_id, b"p" + struct.pack("d", original_send_time)).wait(timeout=3)
+        return WormholePingCommand().send(receiver_id, self).wait()
 
-        if send_time_data is None:
+    def uptime(self, receiver_id: str):
+        uptime_data = self.send(receiver_id, b"u").wait(timeout=3)
+        if uptime_data is None:
             raise RuntimeError("Did not receive own time")
-        send_time, = struct.unpack("d", send_time_data)
-        return time.time() - send_time
+        uptime, = struct.unpack("d", uptime_data)
+        return uptime
 
     def stop(self, wait=True):
-        self.send(self.__receiver_id, b"s")
+        if self.__state == WormholeState.ACTIVE:
+            self.send(self.__receiver_id, b"s").wait(raise_on_error=False)
         if wait:
             while self.__state != WormholeState.INACTIVE:
                 self.sleep(0.1)
@@ -171,7 +185,8 @@ class BasicWormhole:
     def unregister_all_handlers(self):
         for queue_name in list(self.__handlers.keys()):
             del self.__handlers[queue_name]
-        self.__send_refresh()
+        if self.__channel.is_open():
+            self.__send_refresh()
 
     def register_all_handlers_of_instance(self, instance: object):
         for attr_name in dir(instance):
@@ -183,6 +198,12 @@ class BasicWormhole:
             wormhole_queue_name = getattr(attr, 'wormhole_queue_name')
             wormhole_queue_tag = getattr(attr, 'wormhole_queue_tag')
             self.register_handler(wormhole_queue_name, attr, wormhole_queue_tag)
+
+    def learn_command(self, command: Type[WormholeCommand]):
+        self.__commands[command.HEADER[0]] = command
+
+    def unlearn_command(self, command: Type[WormholeCommand]):
+        del self.__commands[command.HEADER[0]]
 
     def register_message_handler(self, message_class: Type["WormholeMessage"], handler_func: Callable,
                                  queue_name: Optional[str] = None, tag: Optional[str] = None):
@@ -281,12 +302,14 @@ class BasicWormhole:
 
     def __internal_handler_private_queue(self, data: bytes):
         command = data
+        command_id = command[0]
         if command[0] == b"s"[0]:  # stop
             self.__state = WormholeState.DEACTIVATING
-        elif command[0] == b"p"[0]:  # ping
-            sender_time, = struct.unpack("d", command[1:9])
-            return struct.pack("d", sender_time)
         elif command[0] == b"r"[0]:  # refresh
             pass
+        elif command[0] == b"u"[0]:  # uptime
+            return struct.pack("d", time.time() - self.__processing_start_time)
+        elif command_id in self.__commands:
+            return self.__commands[command_id].handle(command[1:])
         else:
             raise WormholeHandlingError(f"No such command: {repr(data)}")

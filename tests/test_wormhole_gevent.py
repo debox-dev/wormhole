@@ -6,6 +6,7 @@ from tests.test_objects import Vector3Handler, Vector3Message
 from wormhole.async_implementations.async_gevent import GeventWormhole
 from wormhole.basic import WormholeWaitable
 from wormhole.channel import WormholeRedisChannel, AbstractWormholeChannel
+from wormhole.command import WormholePingCommand
 from wormhole.error import WormholeHandlingError
 from gevent.monkey import patch_all
 from typing import *
@@ -79,12 +80,12 @@ class TestWormholeGeventSessionAndGroups(BaseTestWormholeGevent):
         group_name = "group111"
         group_name2 = "group222"
         self.wormhole.add_to_group(group_name).wait()
-        assert self.wormhole.id in self.wormhole.channel.find_group_members(group_name)
+        assert self.wormhole.id in self.wormhole.find_group_members(group_name)
         Vector3Message(2, 5, 6).send(wormhole=self.wormhole, group=group_name).wait()
         self.wormhole.add_to_group(group_name2).wait()
         Vector3Message(2, 5, 6).send(wormhole=self.wormhole, group=group_name2).wait()
         self.wormhole.remove_from_group(group_name).wait()
-        assert self.wormhole.id not in self.wormhole.channel.find_group_members(group_name)
+        assert self.wormhole.id not in self.wormhole.find_group_members(group_name)
         async_result = Vector3Message(2, 5, 6).send(wormhole=self.wormhole, group=group_name)
         gevent.sleep(1)
         assert not async_result.poll()
@@ -142,6 +143,10 @@ class TestWormholeGevent(BaseTestWormholeGevent):
         for m, p in promises:
             assert p.wait() == m.magnitude
 
+    def test_uptime(self):
+        gevent.sleep(3)
+        assert self.wormhole.uptime(self.wormhole.id) >= 3
+
     def test_delayed_simple(self):
         promises = []
         for i in range(0, 20):
@@ -151,6 +156,11 @@ class TestWormholeGevent(BaseTestWormholeGevent):
             promises.append((m, p))
         for m, p in promises:
             assert p.wait() == m.magnitude
+
+    def test_commands(self):
+        self.wormhole.learn_command(WormholePingCommand)
+        duration = WormholePingCommand().send(self.wormhole.id, wormhole=self.wormhole).wait()
+        assert duration <= 0.05
 
     def test_wait_for_any(self):
         reply_data = "asd1242FAS"
