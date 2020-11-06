@@ -9,7 +9,13 @@ Fun and learning, it's easy, it's simple, it's fast!
 
 
 ## Quick start
+### Install redis
+```apt-get install redis-server```
 
+### Install wormhole python module
+...TBD...
+
+### Use wormhole
 *Receiver*
 ```
 from wormhole.setup import basic_wormhole_setup
