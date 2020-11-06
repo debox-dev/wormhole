@@ -5,7 +5,8 @@ from enum import Enum, auto
 from typing import *
 
 from .command import WormholeCommand, WormholePingCommand
-from .error import WormholeInvalidQueueName, WormholeHandlerAlreadyExists, WormholeHandlerNotRegistered
+from .error import WormholeInvalidQueueName, WormholeHandlerAlreadyExists, WormholeHandlerNotRegistered, \
+    InvalidWormholeMessageHandler
 from .registry import PRINT_HANDLER_EXCEPTIONS
 from .session import WormholeSession
 from .utils import generate_uid
@@ -189,46 +190,25 @@ class BasicWormhole:
         if self.__channel.is_open():
             self.__send_refresh()
 
-    def register_all_handlers_of_instance(self, instance: object):
-        for attr_name in dir(instance):
-            attr = getattr(instance, attr_name)
-            if not callable(attr):
-                continue
-            if not hasattr(attr, 'wormhole_handler'):
-                continue
-            wormhole_queue_name = getattr(attr, 'wormhole_queue_name')
-            wormhole_queue_tag = getattr(attr, 'wormhole_queue_tag')
-            self.register_handler(wormhole_queue_name, attr, wormhole_queue_tag)
-
     def learn_command(self, command: Type[WormholeCommand]):
         self.__commands[command.HEADER[0]] = command
 
     def unlearn_command(self, command: Type[WormholeCommand]):
         del self.__commands[command.HEADER[0]]
 
-    def register_message_handler(self, message_class: Type["WormholeMessage"], handler_func: Callable,
-                                 queue_name: Optional[str] = None, tag: Optional[str] = None):
-        if queue_name is None:
-            queue_name = message_class.get_base_queue_name()
-        self.register_handler(queue_name, handler_func, tag)
-
-    def unregister_message_handler(self, message_class: Type["WormholeMessage"], queue_name: Optional[str] = None,
-                                   tag: Optional[str] = None):
-        if queue_name is None:
-            queue_name = message_class.get_base_queue_name()
-        self.unregister_handler(queue_name, tag)
-
     def register_handler(self, queue_name: str, handler_func: Callable, tag: Optional[str] = None):
         queue_name = WormholeQueue.format(queue_name, tag)
         if queue_name in self.__handlers:
             raise WormholeHandlerAlreadyExists(queue_name)
         self.__handlers[queue_name] = handler_func
+        return self.__send_refresh()
 
     def unregister_handler(self, queue_name: str, tag: Optional[str] = None):
         queue_name = WormholeQueue.format(queue_name, tag)
         if queue_name not in self.__handlers:
             raise WormholeHandlerNotRegistered(queue_name)
         del self.__handlers[queue_name]
+        return self.__send_refresh()
 
     def execute_handler(self, handler_func: Callable, data: Any, on_response: Callable):
         try:

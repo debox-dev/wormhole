@@ -11,6 +11,8 @@ from wormhole.error import WormholeHandlingError
 from gevent.monkey import patch_all
 from typing import *
 
+from wormhole.message import WormholeMessage
+
 patch_all()
 
 
@@ -21,7 +23,7 @@ class TestWormholeGeventCloseSequence:
         wormhole_channel = WormholeRedisChannel(self.TEST_REDIS)
         wormhole = GeventWormhole(wormhole_channel)
         handler = Vector3Handler()
-        wormhole.register_all_handlers_of_instance(handler)
+        WormholeMessage.register_all_handlers_of_instance(wormhole, handler)
         wormhole.process_async()
         wormhole.stop(wait=True)
         wormhole_channel.close()
@@ -39,7 +41,7 @@ class BaseTestWormholeGevent:
         self.wormhole_channel = WormholeRedisChannel(self.TEST_REDIS, max_connections=10)
         self.wormhole = GeventWormhole(self.wormhole_channel)
         handler = Vector3Handler()
-        self.wormhole.register_all_handlers_of_instance(handler)
+        WormholeMessage.register_all_handlers_of_instance(self.wormhole, handler)
         self.wormhole.process_async(max_parallel=10)
 
     def teardown_method(self):
@@ -64,7 +66,7 @@ class TestWormholeGeventSessionAndGroups(BaseTestWormholeGevent):
             wh = GeventWormhole(ch)
             self.wormholes.append(wh)
             handler = Vector3Handler()
-            wh.register_all_handlers_of_instance(handler)
+            WormholeMessage.register_all_handlers_of_instance(wh, handler)
             wh.process_async()
 
     def teardown_method(self):

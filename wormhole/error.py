@@ -32,3 +32,7 @@ class WormholeHandlingError(BaseWormholeException):
 
 class WormholeChannelError(BaseWormholeException):
     pass
+
+
+class InvalidWormholeMessageHandler(BaseWormholeException):
+    pass

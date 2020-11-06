@@ -9,7 +9,7 @@ class SumMessage(WormholeMessage):
 
 
 class MessageHandler:
-    @SumMessage.register_instance_handler()
+    @SumMessage.set_wormhole()
     def on_sum_message(self, message: SumMessage):
         return sum(message.numbers)
 
@@ -17,5 +17,5 @@ class MessageHandler:
 handler = MessageHandler()
 wormhole = basic_wormhole_setup()
 # Register the instance of Messagehandler
-wormhole.register_all_handlers_of_instance(handler)
+WormholeMessage.register_all_handlers_of_instance(wormhole, handler)
 wormhole.process_blocking()

@@ -3,9 +3,17 @@ import hashlib
 
 from typing import *
 
+if TYPE_CHECKING:
+    from .session import WormholeSession
+
 
 def generate_uid():
     return uuid.uuid4().hex
+
+
+def wait_all(sessions: Iterable["WormholeSession"]):
+    sessions = list(sessions)
+    return [s.wait() for s in sessions]
 
 
 def dynamic_import(name: str):
@@ -42,3 +50,6 @@ def merge_queue_name_with_tag(queue_name: str, tag: Optional[str]):
         return queue_name
     return f"{queue_name}:{tag}"
 
+
+def overridable(f):
+    return f

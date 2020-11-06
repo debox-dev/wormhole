@@ -60,3 +60,4 @@ class WormholePingCommand(WormholeCommand):
 
     def deserialize_response(self, data: bytes):
         return time.time() - struct.unpack("d", data)[0]
+

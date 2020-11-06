@@ -3,6 +3,12 @@
 import gevent
 
 from wormhole.message import WormholeMessage
+from wormhole.mixin import WormholeHandlerInstanceMixin
+
+from typing import *
+
+if TYPE_CHECKING:
+    from wormhole.basic import BasicWormhole
 
 
 class Vector3:
@@ -26,8 +32,16 @@ class Vector3Message(Vector3, WormholeMessage):
 
 
 class Vector3Handler:
-    @Vector3Message.register_instance_handler()
+    @Vector3Message.set_wormhole()
     def on_vector3(self, message: Vector3Message):
         if message.delay > 0:
             gevent.sleep(message.delay)
         return message.magnitude
+
+
+class Vector3MixinHandler(Vector3Handler, WormholeHandlerInstanceMixin):
+    def __init__(self, wormhole: "BasicWormhole"):
+        self.wormhole = wormhole
+
+    def _get_wormhole(self) -> Optional["BasicWormhole"]:
+        return self.wormhole
