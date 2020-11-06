@@ -133,7 +133,7 @@ class WormholeRedisChannel(AbstractWormholeChannel):
             return True, None, receiver_id
         return True, self.__encoder.decode(data), receiver_id
 
-    def reply(self, message_id: str, data: Union[bytes, str], is_error: bool,
+    def reply(self, message_id: str, data: Any, is_error: bool,
               timeout: int = DEFAULT_REPLY_TIMEOUT):
         response_queue = "response:" + message_id
         rdb = self.__get_rdb()
