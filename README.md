@@ -7,13 +7,49 @@ Wormhole is based on [gregie156's version of rdisq](https://github.com/gregie156
 ## Why?
 Fun and learning, it's easy, it's simple, it's fast!
 
+## General architecture
+```
+
+                                                          +-------+
+                                     +------------------->+ Redis +<--------------------+
+                                     |                    +-------+                     |
+                                     |                                                  |
+                                     |                                                  |
+                                     |                                                  |
+                                     |                                                  |
+                                     |                                                  |
+                                     |                                                  |
+  +-----------------------------------------------------+       +-----------------------------------------------------+
+  |  Python process                                     |       |  Python process                                     |
+  |                                                     |       |                                                     |
+  |                             +---------+             |       |                             +---------+             |
+  |                         +-->+ Channel +<--+         |       |                         +-->+ Channel +<--+         |
+  |                         |   +---------+   |         |       |                         |   +---------+   |         |
+  |                         |                 |         |       |                         |                 |         |
+  |                         |                 |         |       |                         |                 |         |
+  |                         |                 |         |       |                         |                 |         |
+  | +-----------+     +----------+      +----------+    |       | +-----------+     +----------+      +----------+    |
+  | | send(data)+---->+ wormhole |      | wormhole |    |       | | send(data)+---->+ wormhole |      | wormhole |    |
+  | +-----------+     +----------+      +----------+    |       | +-----------+     +----------+      +----------+    |
+  |                         ^                 ^         |       |                         ^                 ^         |
+  |                         |                 |         |       |                         |                 |         |
+  |                    +---------+       +---------+    |       |                    +---------+       +---------+    |
+  |                    | handler |       | handler |    |       |                    | handler |       | handler |    |
+  |                    +---------+       +---------+    |       |                    +---------+       +---------+    |
+  |                    +---------+                      |       |                    +---------+                      |
+  |                    | handler |                      |       |                    | handler |                      |
+  |                    +---------+                      |       |                    +---------+                      |
+  |                                                     |       |                                                     |
+  +-----------------------------------------------------+       +-----------------------------------------------------+
+```
+
 
 ## Quick start
 ### Install redis
 ```apt-get install redis-server```
 
 ### Install wormhole python module
-...TBD...
+34
 
 ### Use wormhole
 *Receiver*
@@ -64,5 +100,5 @@ print("Sum: " + str(wormhole.send("sum", [5,5,5], session=session).wait())
 
 ```
 
-## More neat tricks..receiver
+## More neat tricks...
 Wormhole can do much more, but the documentation is still incomplete, see the examples folder
