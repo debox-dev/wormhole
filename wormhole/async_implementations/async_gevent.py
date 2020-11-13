@@ -25,6 +25,9 @@ class GeventWormhole(BasicWormhole):
         while not self.is_running:  # TODO: Listen to signal
             gevent.sleep(0.1)
 
+    def _is_handling_enabled(self):
+        return self.__current_handling_count < self.max_parallel
+
     def execute_handler(self, handler_func: Callable, data: Any, on_response: Callable):
         if not self.PARALLEL:
             super().execute_handler(handler_func, data, on_response)
@@ -40,8 +43,11 @@ class GeventWormhole(BasicWormhole):
 
     def async_handler(self, handler_func, data, on_response):
         BasicWormhole.execute_handler(self, handler_func, data, on_response)
+        needs_refresh = self.max_parallel <= self.__current_handling_count
         self.__current_handling_count -= 1
         self.__handling_complete_event.set()
+        if needs_refresh:
+            self._refresh()
 
     def sleep(self, duration):
         gevent.sleep(duration)

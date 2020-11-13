@@ -182,6 +182,9 @@ class BasicWormhole:
             while self.__state != WormholeState.INACTIVE:
                 self.sleep(0.1)
 
+    def _refresh(self):
+        self.__send_refresh()
+
     def __send_refresh(self):
         return self.send(self.id, b"r")
 
@@ -246,17 +249,20 @@ class BasicWormhole:
                 handlers_by_queue_name[f"{base_user_queue_name}:{self.id}"] = handler_func
         return handlers_by_queue_name
 
+    def _is_handling_enabled(self):
+        return True
+
     def __pop_and_handle_next(self, timeout: int = 5) -> None:
         handlers = self.__get_handler_by_queue_names()
-        channel_queue_names: List[str] = []
-        for queue_name in handlers.keys():
-            wh_queue = WormholeQueue.from_string(queue_name)
-            channel_queue_names.append(queue_name)
-            for group_name in self.__groups | {self.id}:
-                wh_queue.group = group_name
-                channel_queue_names.append(str(wh_queue))
         internal_channel = WormholeQueue.format(self.id)
-        channel_queue_names.append(internal_channel)
+        channel_queue_names: List[str] = [internal_channel]
+        if self._is_handling_enabled():
+            for queue_name in handlers.keys():
+                wh_queue = WormholeQueue.from_string(queue_name)
+                channel_queue_names.append(queue_name)
+                for group_name in self.__groups | {self.id}:
+                    wh_queue.group = group_name
+                    channel_queue_names.append(str(wh_queue))
         remove_from_groups = list(self.__previous_groups - self.__groups)
         if len(remove_from_groups) > 0:
             self.__channel.remove_from_groups(remove_from_groups, self.id)

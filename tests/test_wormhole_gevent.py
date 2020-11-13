@@ -13,6 +13,7 @@ from typing import *
 
 from wormhole.handler import WormholeHandler
 from wormhole.message import WormholeMessage
+from wormhole.session import WormholeSession
 from wormhole.utils import wait_all
 
 patch_all()
@@ -51,6 +52,39 @@ class BaseTestWormholeGevent:
         self.wormhole_channel.close()
         self.wormhole = None
         self.wormhole_channel = None
+
+
+class TestMultipleWormholeTooManyConnections(BaseTestWormholeGevent):
+    wormholes: List[GeventWormhole]
+    channel: WormholeRedisChannel
+
+    def setup_method(self):
+        super().setup_method()
+        # start many wormholes and channels so there will be a chance for the test to fail on wrong receiver id
+        self.wormholes = []
+        self.channel = WormholeRedisChannel(self.TEST_REDIS, max_connections=6)
+        for _ in range(5):
+            wh = GeventWormhole(self.channel)
+            self.wormholes.append(wh)
+            handler = Vector3Handler()
+            WormholeHandler.register_all_handlers_of_instance(wh, handler)
+            wh.process_async()
+
+    def test_stop_all(self):
+        super().teardown_method()
+        for wh in self.wormholes:
+            wh.stop(False)
+
+        while True:
+            gevent.sleep(0.1)
+            for wh in self.wormholes:
+                if wh.is_running:
+                    continue
+            break
+
+    def teardown_method(self):
+        self.wormholes = []
+        self.channel.close()
 
 
 class TestMultipleWormhole(BaseTestWormholeGevent):
@@ -200,3 +234,35 @@ class TestWormholeGevent(BaseTestWormholeGevent):
         # Send one more time and make sure we timeout
         with pytest.raises(WormholeHandlingError):
             self.wormhole.send("asd", dummy_data).wait(timeout=1)
+
+    def test_max_parallel(self):
+        for i in range(self.wormhole.max_parallel):
+            v = Vector3Message(1, 2, 3)
+            v.delay = 3
+            v.send(wormhole=self.wormhole)
+        v = Vector3Message(1, 2, 3)
+        s: WormholeSession
+        with pytest.raises(WormholeHandlingError):
+            s = v.send(wormhole=self.wormhole)
+            s.wait(timeout=1)
+        assert s.is_error
+        # Verify the wormhole did not take the message because it was too busy
+        assert s.receiver_id == ''
+
+    def test_max_parallel2(self):
+        for i in range(self.wormhole.max_parallel):
+            v = Vector3Message(1, 2, 3)
+            v.delay = 3
+            v.send(wormhole=self.wormhole)
+        v = Vector3Message(1, 2, 3)
+        s: WormholeSession
+        other_wormhole = GeventWormhole(channel=self.wormhole_channel)
+        other_wormhole.process_async(2)
+        handler = Vector3Handler()
+        WormholeHandler.register_all_handlers_of_instance(other_wormhole, handler)
+        s = v.send(wormhole=self.wormhole)
+        s.wait(timeout=1)
+        assert not s.is_error
+        # Verify the first wormhole did not take the message because it was too busy
+        assert s.receiver_id == other_wormhole.id
+        other_wormhole.stop(wait=True)
