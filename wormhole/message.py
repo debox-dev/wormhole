@@ -1,4 +1,6 @@
-﻿from wormhole.utils import get_full_type_path, hash_string, merge_queue_name_with_tag
+﻿import pickle
+
+from wormhole.utils import get_full_type_path, hash_string, merge_queue_name_with_tag
 
 from typing import *
 

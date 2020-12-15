@@ -149,7 +149,18 @@ class BasicWormhole:
             queue_name = WormholeQueue.format(waitable.queue_name, waitable.tag)
             channel_queue_names.append(queue_name)
             waitable_by_queue[queue_name] = waitable
-        result = self.__channel.pop_next(self.id, channel_queue_names, timeout)
+        try:
+            result = self.__channel.pop_next(self.id, channel_queue_names, timeout)
+        except KeyError as e:
+            if PRINT_HANDLER_EXCEPTIONS:
+                import traceback
+                print("=" * 80)
+                print(f"ERROR: {e}")
+                print("POP EXCEPTION")
+                traceback.print_exc()
+                print("=" * 80)
+            result = None
+
         did_timeout = result is None
         if did_timeout:
             return WormholeWaitResult(None, None, None)

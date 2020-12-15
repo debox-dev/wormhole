@@ -165,11 +165,13 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         # If the queued message already expired - return none
         if result_payload is None:
             return None
+        if self.MESSAGE_DATA_HKEY.encode() not in result_payload:
+            return None  # empty stale message
         try:
             rdb.hset(result_message_id, self.MESSAGE_WORMHOLE_RECEIVER_ID_HKEY, wh_receiver_id)
             message_data = result_payload[self.MESSAGE_DATA_HKEY.encode()]
         except KeyError:
-            raise KeyError(f"Message {result_message_id} payload missing data: {repr(result_payload)}")
+            return None
         return result_queue_name, result_message_id, self.__encoder.decode(message_data)
 
     def close(self):
