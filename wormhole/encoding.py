@@ -33,5 +33,5 @@ class WormholePickleEncoder(object):
             return data[1:]
         try:
             return loads(data)
-        except UnpicklingError as e:
+        except Exception as e:
             raise WormholeDecodeError(f"Error decoding data: {e} {repr(data)}")

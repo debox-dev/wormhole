@@ -43,6 +43,9 @@ class AbstractWormholeChannel:
     def release(self, lock_name: str, lock_secret: str, force=False):
         raise NotImplementedError()
 
+    def threshold_lock(self, lock_name: str, max_amount: int, duration: float):
+        raise NotImplementedError()
+
     def is_locked(self, lock_name: str):
         raise NotImplementedError()
 
@@ -55,6 +58,7 @@ class WormholeRedisChannel(AbstractWormholeChannel):
     GROUP_REGISTRY_PREFIX = "whgm://"
     LOCK_PREFIX = "whlk://"
     LOCK_SIGNAL_PREFIX = "whlks://"
+    THRESHOLD_LOCK_PREFIX = "whth://"
 
     def __init__(self, redis_uri: str = "redis://localhost:6379/1", max_connections=20):
         self.__connection_pool = BlockingConnectionPool.from_url(redis_uri, max_connections=max_connections)
@@ -177,6 +181,18 @@ class WormholeRedisChannel(AbstractWormholeChannel):
     def close(self):
         self.__closed = True
         self.__connection_pool.disconnect()
+
+    def threshold_lock(self, lock_name: str, max_amount: int, duration: int):
+        assert duration < 1, "'duration' cannot be smaller than 1"
+        assert max_amount < 1, "'max_amount' cannot be smaller than 1"
+        full_lock_name = f"{self.THRESHOLD_LOCK_PREFIX}{lock_name}"
+        rdb = self.__get_rdb()
+        result = rdb.incr(full_lock_name)
+        if result > max_amount:
+            return False
+        if result == 1:
+            rdb.expire(full_lock_name, duration)
+        return True
 
     def lock(self, lock_name: str, block: bool = True, block_timeout: int = 0, lock_timeout: int = 0) -> Optional[str]:
         lock_secret = generate_uid()
