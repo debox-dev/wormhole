@@ -183,8 +183,8 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         self.__connection_pool.disconnect()
 
     def threshold_lock(self, lock_name: str, max_amount: int, duration: int):
-        assert duration < 1, "'duration' cannot be smaller than 1"
-        assert max_amount < 1, "'max_amount' cannot be smaller than 1"
+        assert duration >= 1, "'duration' cannot be smaller than 1"
+        assert max_amount >= 1, "'max_amount' cannot be smaller than 1"
         full_lock_name = f"{self.THRESHOLD_LOCK_PREFIX}{lock_name}"
         rdb = self.__get_rdb()
         result = rdb.incr(full_lock_name)
