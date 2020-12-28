@@ -77,6 +77,7 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         self.__closed = False
         self.__send_rate = -1
         self.__receive_rate = -1
+        self.stats_enabled = True
 
     def is_open(self):
         return not self.__closed
@@ -120,15 +121,16 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         rdb = self.__get_rdb()
 
         # Stats
-        now = time.time()
-        stats_counter_key = f"{self.STATS_PREFIX}{wh_sender_id}:sends"
-        stats_last_update_key = f"{self.STATS_PREFIX}{wh_sender_id}:sends_touch_time"
-        last_stat_time: Union[bytes, float] = rdb.get(stats_last_update_key)
-        if last_stat_time is None:
-            last_stat_time = time.time()
-            rdb.set(stats_last_update_key, last_stat_time)
-        else:
-            last_stat_time = float(last_stat_time.decode())
+        if self.stats_enabled:
+            now = time.time()
+            stats_counter_key = f"{self.STATS_PREFIX}{wh_sender_id}:sends"
+            stats_last_update_key = f"{self.STATS_PREFIX}{wh_sender_id}:sends_touch_time"
+            last_stat_time: Union[bytes, float] = rdb.get(stats_last_update_key)
+            if last_stat_time is None:
+                last_stat_time = time.time()
+                rdb.set(stats_last_update_key, last_stat_time)
+            else:
+                last_stat_time = float(last_stat_time.decode())
         ############
 
         transaction = rdb.pipeline()
@@ -141,12 +143,13 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         assert rdb.exists(message_id)
 
         # STATS
-        total_sends_since = rdb.incr(stats_counter_key)
-        seconds_since = now - last_stat_time
-        if seconds_since >= 60 or total_sends_since > 2000:
-            self.__send_rate = total_sends_since / seconds_since
-            rdb.set(stats_counter_key, 0)
-            rdb.set(stats_last_update_key, now)
+        if self.stats_enabled:
+            total_sends_since = rdb.incr(stats_counter_key)
+            seconds_since = now - last_stat_time
+            if seconds_since >= 60 or total_sends_since > 2000:
+                self.__send_rate = total_sends_since / seconds_since
+                rdb.set(stats_counter_key, 0)
+                rdb.set(stats_last_update_key, now)
         #############
 
         return message_id
@@ -207,22 +210,22 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         result_payload = rdb.hgetall(result_message_id)
 
         # Stats
-        now = time.time()
-        stats_counter_key = f"{self.STATS_PREFIX}{wh_receiver_id}:receive"
-        stats_last_update_key = f"{self.STATS_PREFIX}{wh_receiver_id}:receive_touch_time"
-        last_stat_time: Union[bytes, float] = rdb.get(stats_last_update_key)
-        if last_stat_time is None:
-            last_stat_time = time.time()
-            rdb.set(stats_last_update_key, last_stat_time)
-        else:
-            last_stat_time = float(last_stat_time.decode())
-
-        total_count_since = rdb.incr(stats_counter_key)
-        seconds_since = now - last_stat_time
-        if seconds_since >= 60 or total_count_since > 2000:
-            self.__receive_rate = total_count_since / seconds_since
-            rdb.set(stats_counter_key, 0)
-            rdb.set(stats_last_update_key, now)
+        if self.stats_enabled:
+            now = time.time()
+            stats_counter_key = f"{self.STATS_PREFIX}{wh_receiver_id}:receive"
+            stats_last_update_key = f"{self.STATS_PREFIX}{wh_receiver_id}:receive_touch_time"
+            last_stat_time: Union[bytes, float] = rdb.get(stats_last_update_key)
+            if last_stat_time is None:
+                last_stat_time = time.time()
+                rdb.set(stats_last_update_key, last_stat_time)
+            else:
+                last_stat_time = float(last_stat_time.decode())
+            total_count_since = rdb.incr(stats_counter_key)
+            seconds_since = now - last_stat_time
+            if seconds_since >= 60 or total_count_since > 2000:
+                self.__receive_rate = total_count_since / seconds_since
+                rdb.set(stats_counter_key, 0)
+                rdb.set(stats_last_update_key, now)
         #############
 
         # If the queued message already expired - return none

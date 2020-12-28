@@ -145,3 +145,27 @@ class TestRedisChannel:
         stats = channel.get_stats()
         assert stats.sends_per_second > 60
         assert stats.processing_per_second > 60
+
+    def test_disable_stats(self):
+        imaginary_receiver_id = "receiver1"
+        test_queue_name = "my_queue"
+        dummy_queue_name = "i am another queue"
+        test_payload_data = Vector3(1, 5, 8)
+        test_reply_data = Vector3(1, 0, 1)
+
+        channel = self.tested_channel
+        channel.stats_enabled = False
+        # Send data
+        for _ in range(0, 3000):
+            message_id = channel.send(imaginary_receiver_id, test_queue_name, test_payload_data, 10)
+            result_queue_name, result_message_id, result_data = channel.pop_next(imaginary_receiver_id,
+                                                                                 [test_queue_name, dummy_queue_name],
+                                                                                 timeout=10)
+            assert result_message_id == message_id
+            assert result_queue_name == test_queue_name
+            assert result_data == test_payload_data
+            assert isinstance(result_data, Vector3)
+            assert result_data.magnitude == test_payload_data.magnitude
+        stats = channel.get_stats()
+        assert stats.sends_per_second == -1
+        assert stats.processing_per_second == -1
