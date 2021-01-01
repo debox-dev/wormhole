@@ -4,8 +4,8 @@ if TYPE_CHECKING:
     from .basic import BasicWormhole
 
 __PRIMARY_WORMHOLE: Optional["BasicWormhole"] = None
-DEFAULT_MESSAGE_TIMEOUT = 30
-DEFAULT_REPLY_TIMEOUT = 30
+DEFAULT_MESSAGE_TIMEOUT = 5
+DEFAULT_REPLY_TIMEOUT = 5
 PRINT_HANDLER_EXCEPTIONS = True
 
 
@@ -17,3 +17,4 @@ def get_primary_wormhole():
 def set_primary_wormhole(wh: "BasicWormhole"):
     global __PRIMARY_WORMHOLE
     __PRIMARY_WORMHOLE = wh
+    
