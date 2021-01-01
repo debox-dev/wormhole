@@ -1,4 +1,5 @@
-﻿import time
+﻿import random
+import time
 
 import redis
 
@@ -201,6 +202,7 @@ class WormholeRedisChannel(AbstractWormholeChannel):
     def pop_next(self, wh_receiver_id: str, queue_names: List[str], timeout: int = 5) -> Optional[
         Tuple[str, str, bytes]]:
         rdb = self.__get_rdb()
+        random.shuffle(queue_names)
         result: Optional[Tuple[bytes, bytes]] = rdb.brpop(queue_names, timeout)
         did_timeout = result is None
         if did_timeout:
