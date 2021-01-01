@@ -250,7 +250,7 @@ class BasicWormhole:
 
         queue_name = WormholeQueue.format(queue_name, tag, group)
         message_id = self.__channel.send(self.id, queue_name, data)
-        return WormholeSession(message_id, self)
+        return WormholeSession(message_id, self, lambda: self.send(queue_name, data, tag, session, group))
 
     def __get_handler_by_queue_names(self) -> Dict[str, Callable]:
         handlers_by_queue_name: Dict[str, Callable] = {}
