@@ -5,14 +5,13 @@ from enum import Enum, auto
 from typing import *
 
 from .command import WormholeCommand, WormholePingCommand
-from .error import WormholeInvalidQueueName, WormholeHandlerAlreadyExists, WormholeHandlerNotRegistered, \
-    InvalidWormholeMessageHandler
+from .error import WormholeHandlerAlreadyExists, WormholeHandlerNotRegistered, WormholeSendError, \
+    WormholeUnknownHandlerCommandError
 from .registry import PRINT_HANDLER_EXCEPTIONS
 from .session import WormholeSession
 from .utils import generate_uid
 from .waitable import WormholeWaitable
 from .message import WormholeMessage
-from .error import WormholeHandlingError
 
 if TYPE_CHECKING:
     from .channel import AbstractWormholeChannel
@@ -236,7 +235,7 @@ class BasicWormhole:
                 print("HANDLING EXCEPTION")
                 traceback.print_exc()
                 print("=" * 80)
-            on_response(str(e), True)
+            on_response(e, True)
 
     def send(self, queue_name: str, data: Any, tag: Union[None, str, WormholeSession] = None,
              session: Optional[WormholeSession] = None, group: Optional[str] = None):
@@ -245,9 +244,8 @@ class BasicWormhole:
             tag = None
         if session is not None:
             if tag is not None or group is not None:
-                raise WormholeHandlingError("Cannot specify both tag/group and session when sending")
+                raise WormholeSendError("Cannot specify both tag/group and session when sending")
             group = session.receiver_id
-
         queue_name = WormholeQueue.format(queue_name, tag, group)
         message_id = self.__channel.send(self.id, queue_name, data)
         return WormholeSession(message_id, self, lambda: self.send(queue_name, data, tag, session, group))
@@ -310,4 +308,4 @@ class BasicWormhole:
         elif command_id in self.__commands:
             return self.__commands[command_id].handle(command[1:])
         else:
-            raise WormholeHandlingError(f"No such command: {repr(data)}")
+            raise WormholeUnknownHandlerCommandError(f"No such command: {repr(data)}")

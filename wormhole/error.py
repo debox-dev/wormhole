@@ -26,8 +26,23 @@ class WormholeDecodeError(BaseWormholeException):
     pass
 
 
-class WormholeHandlingError(BaseWormholeException):
+class WormholeSendError(BaseWormholeException):
     pass
+
+
+class WormholeUnknownHandlerCommandError(BaseWormholeException):
+    """Raised remotely when a wormhole instance receives an internal command code that is unknown"""
+    pass
+
+
+class WormholeWaitForReplyError(BaseWormholeException):
+    """Raised when there was an error receiving a reply from a sent message"""
+    pass
+
+
+class WormholeHandlingError(BaseWormholeException):
+    def __init__(self, original_exception: Exception):
+        self.ex = original_exception
 
 
 class WormholeChannelError(BaseWormholeException):

@@ -10,6 +10,7 @@ from typing import *
 class GeventWormhole(BasicWormhole):
     PARALLEL: bool = False
     max_parallel: Optional[int]
+    __debug_seq = 0
     __greenlet = None
     __current_handling_count = 0
     __handling_complete_event: Event
@@ -28,12 +29,16 @@ class GeventWormhole(BasicWormhole):
     def _is_handling_enabled(self):
         return self.__current_handling_count < self.max_parallel
 
+    def __can_handle_async(self):
+        return self._is_handling_enabled() and self.PARALLEL
+
     def execute_handler(self, handler_func: Callable, data: Any, on_response: Callable):
+        self.__debug_seq += 1
+        dseq = self.__debug_seq
         if not self.PARALLEL:
             super().execute_handler(handler_func, data, on_response)
             return
-
-        while self.__current_handling_count >= self.max_parallel and self.PARALLEL:
+        while not self.__can_handle_async():
             self.__handling_complete_event.wait()
             self.__handling_complete_event.clear()
         if not self.PARALLEL:

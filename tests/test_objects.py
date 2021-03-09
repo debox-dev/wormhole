@@ -23,12 +23,15 @@ class Vector3:
         return self.x == other.x and self.y == other.y and self.z == other.z
 
     def __str__(self):
-        return f"({self.x}, {self.y}, {self.z}"
+        return f"({self.x}, {self.y}, {self.z})"
 
 
 class Vector3Message(Vector3, WormholeMessage):
     delay = 0
     pass
+
+    def __repr__(self):
+        return f"Vector3Message{str(self)}"
 
 
 class Vector3Handler:

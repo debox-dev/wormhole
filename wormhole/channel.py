@@ -8,7 +8,7 @@ from typing import *
 from redis import BlockingConnectionPool
 
 from wormhole.encoding import WormholePickleEncoder
-from wormhole.error import WormholeChannelError
+from wormhole.error import WormholeChannelError, WormholeWaitForReplyError
 from wormhole.registry import DEFAULT_MESSAGE_TIMEOUT, DEFAULT_REPLY_TIMEOUT
 from wormhole.utils import generate_uid
 
@@ -169,8 +169,8 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         receiver_id = rdb.hget(message_id, self.MESSAGE_WORMHOLE_RECEIVER_ID_HKEY)
         if not result:
             if receiver_id is None:
-                return False, f"Message timed out, no handlers found for message {message_id}", ""
-            return False, f"Timeout waiting for results from {receiver_id}", ""
+                return False, WormholeWaitForReplyError(f"Message timed out, no handlers found for message {message_id}"), ""
+            return False, WormholeWaitForReplyError(f"Timeout waiting for results from {receiver_id}"), ""
         if isinstance(receiver_id, bytes):
             receiver_id = receiver_id.decode()
         rdb.delete(message_id)

@@ -1,6 +1,6 @@
 ﻿from typing import *
 
-from .error import WormholeHandlingError
+from .error import WormholeHandlingError, WormholeWaitForReplyError
 from .registry import DEFAULT_MESSAGE_TIMEOUT
 
 if TYPE_CHECKING:
@@ -32,13 +32,15 @@ class WormholeSession:
             self.wait(raise_on_error=False)
         return True
 
-    def wait(self, raise_on_error=True, timeout: int = DEFAULT_MESSAGE_TIMEOUT) -> Any:
+    def wait(self, raise_on_error=True, timeout: int = DEFAULT_MESSAGE_TIMEOUT, retries: int = 2) -> Any:
+        reply_data: Union[Any, Exception] = None
         if not self.__did_get_reply:
             is_success, reply_data, wh_receiver_id = self.wormhole.channel.wait_for_reply(self.message_id,
                                                                                           timeout=timeout)
             if self.__resend_delegate is not None:
-                for i in range(0, 2):
-                    if not is_success and 'no handlers found' in reply_data:
+                while retries > 0:
+                    retries -= 1
+                    if not is_success and not wh_receiver_id:
                         self.__resend_delegate()
                         is_success, reply_data, wh_receiver_id = self.wormhole.channel.wait_for_reply(self.message_id,
                                                                                                       timeout=timeout)
@@ -47,5 +49,10 @@ class WormholeSession:
             self.__did_get_reply = True
             self.__wh_receiver_id = wh_receiver_id
         if self.is_error and raise_on_error:
-            raise WormholeHandlingError(f"Message processing error: {self.__reply_cache}")
+            if isinstance(reply_data, WormholeWaitForReplyError):
+                raise reply_data
+            if self.__did_get_reply and reply_data is not None:
+                raise WormholeHandlingError(reply_data)
+            else:
+                raise WormholeWaitForReplyError()
         return self.__reply_cache
