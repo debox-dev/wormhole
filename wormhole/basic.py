@@ -6,7 +6,7 @@ from typing import *
 
 from .command import WormholeCommand, WormholePingCommand
 from .error import WormholeHandlerAlreadyExists, WormholeHandlerNotRegistered, WormholeSendError, \
-    WormholeUnknownHandlerCommandError
+    WormholeUnknownHandlerCommandError, WormholeChannelClosedError, WormholeChannelConnectionError
 from .registry import PRINT_HANDLER_EXCEPTIONS
 from .session import WormholeSession
 from .utils import generate_uid
@@ -116,7 +116,10 @@ class BasicWormhole:
         self.__state = WormholeState.ACTIVE
         self.__processing_start_time = time.time()
         while self.__state == WormholeState.ACTIVE:
-            self.__pop_and_handle_next(1)
+            try:
+                self.__pop_and_handle_next(1)
+            except WormholeChannelClosedError:
+                break
         self.__processing_start_time = None
         self.__groups.clear()
         self.__handlers.clear()
@@ -154,8 +157,8 @@ class BasicWormhole:
             if PRINT_HANDLER_EXCEPTIONS:
                 import traceback
                 print("=" * 80)
-                print(f"ERROR: {e}")
                 print("POP EXCEPTION")
+                print(f"ERROR: {e}")
                 traceback.print_exc()
                 print("=" * 80)
             result = None
@@ -225,17 +228,28 @@ class BasicWormhole:
 
     def execute_handler(self, handler_func: Callable, data: Any, on_response: Callable):
         try:
-            reply_data = handler_func(data)
+            try:
+                reply_data = handler_func(data)
+            except Exception as e:
+                if PRINT_HANDLER_EXCEPTIONS:
+                    import traceback
+                    print("=" * 80)
+                    print("HANDLING EXCEPTION")
+                    print(f"DATA: {repr(data)}")
+                    traceback.print_exc()
+                    print("=" * 80)
+                on_response(e, True)
+                return
             on_response(reply_data, False)
-        except Exception as e:
+        except WormholeChannelClosedError:
+            pass  # Nothing we can do if the channel closed
+        except WormholeChannelConnectionError as e:
             if PRINT_HANDLER_EXCEPTIONS:
                 import traceback
                 print("=" * 80)
-                print(f"DATA: {repr(data)}")
-                print("HANDLING EXCEPTION")
+                print(f"CONNECTION ERROR: {e}")
                 traceback.print_exc()
                 print("=" * 80)
-            on_response(e, True)
 
     def send(self, queue_name: str, data: Any, tag: Union[None, str, WormholeSession] = None,
              session: Optional[WormholeSession] = None, group: Optional[str] = None):
@@ -290,10 +304,9 @@ class BasicWormhole:
         else:
             handler_func = handlers[str(wh_queue)]
         self.execute_handler(handler_func, data,
-                             lambda d, e: self.__on_handler__response(message_id, d, e))
+                             lambda d, e: self.__on_handler_response(message_id, d, e))
 
-    def __on_handler__response(self, message_id: str, reply_data: Any, is_error: bool):
-
+    def __on_handler_response(self, message_id: str, reply_data: Any, is_error: bool):
         self.__channel.reply(message_id, reply_data, is_error)
 
     def __internal_handler_private_queue(self, data: bytes):

@@ -2,6 +2,20 @@
     pass
 
 
+class WormholeChannelError(BaseWormholeException):
+    pass
+
+
+class WormholeChannelConnectionError(WormholeChannelError):
+    """Thrown when an error occured during send/receive of the channel"""
+    pass
+
+
+class WormholeChannelClosedError(WormholeChannelError):
+    """Thrown when trying to use channel functionality that require an open channel on a closed channel"""
+    pass
+
+
 class BaseWormholeQueueException(BaseWormholeException):
     def __init__(self, queue_name: str):
         self.queue_name = queue_name
@@ -43,10 +57,6 @@ class WormholeWaitForReplyError(BaseWormholeException):
 class WormholeHandlingError(BaseWormholeException):
     def __init__(self, original_exception: Exception):
         self.ex = original_exception
-
-
-class WormholeChannelError(BaseWormholeException):
-    pass
 
 
 class InvalidWormholeMessageHandler(BaseWormholeException):

@@ -10,7 +10,7 @@ def read(fname):
 
 setup(
     name = "wormhole",
-    version = "0.0.1",
+    version = "0.0.2",
     author = "Lital Natan",
     author_email = "litaln@gmail.com",
     description = ("Minimal RPC and message distribution framework"),

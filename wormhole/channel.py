@@ -8,7 +8,8 @@ from typing import *
 from redis import BlockingConnectionPool
 
 from wormhole.encoding import WormholePickleEncoder
-from wormhole.error import WormholeChannelError, WormholeWaitForReplyError
+from wormhole.error import WormholeChannelError, WormholeWaitForReplyError, WormholeChannelClosedError, \
+    WormholeChannelConnectionError
 from wormhole.registry import DEFAULT_MESSAGE_TIMEOUT, DEFAULT_REPLY_TIMEOUT
 from wormhole.utils import generate_uid
 
@@ -85,7 +86,7 @@ class WormholeRedisChannel(AbstractWormholeChannel):
 
     def __get_rdb(self):
         if self.__closed:
-            raise WormholeChannelError("Wormhole channel was closed, cannot use")
+            raise WormholeChannelClosedError("Wormhole channel was closed, cannot use")
         return redis.Redis(connection_pool=self.__connection_pool)
 
     def get_stats(self):
@@ -182,22 +183,27 @@ class WormholeRedisChannel(AbstractWormholeChannel):
 
     def reply(self, message_id: str, data: Any, is_error: bool,
               timeout: int = DEFAULT_REPLY_TIMEOUT):
-        response_queue = "response:" + message_id
-        rdb = self.__get_rdb()
-        transaction = rdb.pipeline()
-        if is_error:
-            data_hkey = self.MESSAGE_ERROR_HKEY
-            signal_reply = "error"
-        else:
-            data_hkey = self.MESSAGE_RESPONSE_HKEY
-            signal_reply = "handled"
-        if data is not None:
-            transaction.hset(message_id, data_hkey, self.__encoder.encode(data))
-        transaction.lpush(response_queue, signal_reply)
-        transaction.expire(response_queue, timeout)
-        transaction.expire(message_id, timeout)
-        transaction.execute()
-        transaction.close()
+        try:
+            response_queue = "response:" + message_id
+            rdb = self.__get_rdb()
+            transaction = rdb.pipeline()
+            if is_error:
+                data_hkey = self.MESSAGE_ERROR_HKEY
+                signal_reply = "error"
+            else:
+                data_hkey = self.MESSAGE_RESPONSE_HKEY
+                signal_reply = "handled"
+            if data is not None:
+                transaction.hset(message_id, data_hkey, self.__encoder.encode(data))
+            transaction.lpush(response_queue, signal_reply)
+            transaction.expire(response_queue, timeout)
+            transaction.expire(message_id, timeout)
+            transaction.execute()
+            transaction.close()
+        except redis.exceptions.ConnectionError as e:
+            if self.__closed:
+                raise WormholeChannelClosedError("Cannot reply using a closed channel")
+            raise WormholeChannelConnectionError(f"Connection error during reply: {e}")
 
     def pop_next(self, wh_receiver_id: str, queue_names: List[str], timeout: int = 5) -> Optional[
         Tuple[str, str, bytes]]:
