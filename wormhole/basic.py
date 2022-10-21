@@ -259,8 +259,10 @@ class BasicWormhole:
         if session is not None:
             if tag is not None or group is not None:
                 raise WormholeSendError("Cannot specify both tag/group and session when sending")
-            group = session.receiver_id
-        queue_name = WormholeQueue.format(queue_name, tag, group)
+            target_group = session.receiver_id
+        else:
+            target_group = group
+        queue_name = WormholeQueue.format(queue_name, tag, target_group)
         message_id = self.__channel.send(self.id, queue_name, data)
         return WormholeSession(message_id, self, lambda: self.send(queue_name, data, tag, session, group))
 
