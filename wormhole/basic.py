@@ -1,6 +1,7 @@
 ﻿import re
 import time
 import struct
+import traceback
 from enum import Enum, auto
 from typing import *
 
@@ -232,13 +233,12 @@ class BasicWormhole:
                 reply_data = handler_func(data)
             except Exception as e:
                 if PRINT_HANDLER_EXCEPTIONS:
-                    import traceback
                     print("=" * 80)
                     print("HANDLING EXCEPTION")
                     print(f"DATA: {repr(data)}")
                     traceback.print_exc()
                     print("=" * 80)
-                on_response(e, True)
+                on_response(traceback.format_exc(), True)
                 return
             on_response(reply_data, False)
         except WormholeChannelClosedError:
