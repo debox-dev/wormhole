@@ -233,7 +233,6 @@ class BasicWormhole:
                 reply_data = handler_func(data)
             except Exception as e:
                 if PRINT_HANDLER_EXCEPTIONS:
-                    import traceback
                     print("=" * 80)
                     print("HANDLING EXCEPTION")
                     print(f"DATA: {repr(data)}")
