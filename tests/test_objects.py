@@ -48,3 +48,14 @@ class Vector3MixinHandler(Vector3Handler, WormholeHandlerInstanceMixin):
 
     def _get_wormhole(self) -> Optional["BasicWormhole"]:
         return self.wormhole
+
+
+class TextMessage(WormholeMessage):
+    def __init__(self, text: str):
+        self.text = text
+
+
+class TextMessageHandler:
+    @TextMessage.set_wormhole()
+    def on_text_msg(self, m: TextMessage):
+        return m.text[::-1]

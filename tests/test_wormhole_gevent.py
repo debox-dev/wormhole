@@ -4,7 +4,7 @@ import gevent
 import pytest
 import redis
 
-from tests.test_objects import Vector3Handler, Vector3Message
+from tests.test_objects import Vector3Handler, Vector3Message, TextMessage, TextMessageHandler
 from wormhole.async_implementations.async_gevent import GeventWormhole
 from wormhole.basic import WormholeWaitable
 from wormhole.channel import WormholeRedisChannel, AbstractWormholeChannel
@@ -44,8 +44,10 @@ class BaseTestWormholeGevent:
         rdb.close()
         self.wormhole_channel = WormholeRedisChannel(self.TEST_REDIS, max_connections=10)
         self.wormhole = GeventWormhole(self.wormhole_channel)
-        handler = Vector3Handler()
-        WormholeHandler.register_all_handlers_of_instance(self.wormhole, handler)
+        handler1 = Vector3Handler()
+        handler2 = TextMessageHandler()
+        WormholeHandler.register_all_handlers_of_instance(self.wormhole, handler1)
+        WormholeHandler.register_all_handlers_of_instance(self.wormhole, handler2)
         self.wormhole.process_async(max_parallel=10)
 
     def teardown_method(self):
@@ -174,6 +176,13 @@ class TestWormholeGevent(BaseTestWormholeGevent):
         promises = [m.send(wormhole=self.wormhole) for m in messages]
         message_promise_couples = zip(messages, promises)
         assert all([p.wait() == m.magnitude for m, p in message_promise_couples])
+
+    def test_large_message(self):
+        text_data = "abcdef" * 124 * 1024
+        messages = [TextMessage(text_data) for i in range(100)]
+        promises = [m.send(wormhole=self.wormhole) for m in messages]
+        message_promise_couples = zip(messages, promises)
+        assert all([p.wait() == m.text[::-1] for m, p in message_promise_couples])
 
     def test_uptime(self):
         gevent.sleep(1)
