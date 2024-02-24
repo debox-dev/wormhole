@@ -79,7 +79,7 @@ class WormholeWaitResult:
 
 
 class BasicWormhole:
-    POP_TIMEOUT = 1
+    pop_timeout: int
 
     BUILT_IN_COMMANDS = [WormholePingCommand]
 
@@ -95,6 +95,7 @@ class BasicWormhole:
         self.__previous_groups: Set[str] = set()
         self.__processing_start_time: Optional[float] = None
         self.__commands: Dict[int, Type[WormholeCommand]] = {}
+        self.pop_timeout = 0
         for command in self.BUILT_IN_COMMANDS:
             self.learn_command(command)
 
@@ -117,7 +118,7 @@ class BasicWormhole:
         self.__processing_start_time = time.time()
         while self.__state == WormholeState.ACTIVE:
             try:
-                self.__pop_and_handle_next(1)
+                self.__pop_and_handle_next(self.pop_timeout)
             except WormholeChannelClosedError:
                 break
         self.__processing_start_time = None
