@@ -22,7 +22,7 @@ class WormholeJsonEncoder:
 
 
 class WormholePickleEncoder(object):
-    MINIMUM_LENGTH_TO_COMPRESS = 2048
+    MINIMUM_LENGTH_TO_COMPRESS = 128
     COMPRESSION_HEADER = b'$'
     UNPICKED_DATA_HEADER = b'%'
     PICKLED_DATA_HEADER = b'^'
