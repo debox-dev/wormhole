@@ -1,14 +1,15 @@
 ﻿from typing import *
 
 from tests.test_objects import Vector3
-from wormhole.encoding import WormholePickleEncoder
+from wormhole.encoding.base import WormholeEncoder
+from wormhole.encoding.pickleenc import WormholePickleEncoder
 
 
 class TestWormholeEncoder:
-    tested_encoder: Optional[Type[WormholePickleEncoder]]
+    tested_encoder: Optional[WormholeEncoder]
 
     def setup_method(self):
-        self.tested_encoder = WormholePickleEncoder
+        self.tested_encoder = WormholePickleEncoder()
 
     def teardown_method(self):
         self.tested_encoder = None

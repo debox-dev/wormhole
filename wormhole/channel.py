@@ -7,10 +7,10 @@ from typing import *
 
 from redis import BlockingConnectionPool
 
-from wormhole.encoding import WormholePickleEncoder
-from wormhole.error import WormholeChannelError, WormholeWaitForReplyError, WormholeChannelClosedError, \
+from wormhole.encoding.base import WormholeEncoder
+from wormhole.error import WormholeWaitForReplyError, WormholeChannelClosedError, \
     WormholeChannelConnectionError
-from wormhole.registry import DEFAULT_MESSAGE_TIMEOUT, DEFAULT_REPLY_TIMEOUT
+from wormhole.registry import DEFAULT_MESSAGE_TIMEOUT, DEFAULT_REPLY_TIMEOUT, get_default_encoder
 from wormhole.utils import generate_uid
 
 
@@ -73,9 +73,11 @@ class WormholeRedisChannel(AbstractWormholeChannel):
     THRESHOLD_LOCK_PREFIX = "whth://"
     STATS_PREFIX = "whstats://"
 
+    __encoder: WormholeEncoder
+
     def __init__(self, redis_uri: str = "redis://localhost:6379/1", max_connections=20):
         self.__connection_pool = BlockingConnectionPool.from_url(redis_uri, max_connections=max_connections)
-        self.__encoder = WormholePickleEncoder()
+        self.__encoder = get_default_encoder()
         self.__closed = False
         self.__send_rate = -1
         self.__receive_rate = -1
