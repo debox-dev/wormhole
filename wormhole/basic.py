@@ -79,7 +79,7 @@ class WormholeWaitResult:
 
 
 class BasicWormhole:
-    pop_timeout: int
+    pop_timeout: int = 5
 
     BUILT_IN_COMMANDS = [WormholePingCommand]
 
@@ -95,7 +95,6 @@ class BasicWormhole:
         self.__previous_groups: Set[str] = set()
         self.__processing_start_time: Optional[float] = None
         self.__commands: Dict[int, Type[WormholeCommand]] = {}
-        self.pop_timeout = 0
         for command in self.BUILT_IN_COMMANDS:
             self.learn_command(command)
 
@@ -278,7 +277,14 @@ class BasicWormhole:
     def _is_handling_enabled(self):
         return True
 
-    def __pop_and_handle_next(self, timeout: int = 5) -> None:
+    def refresh_groups(self, timeout: int):
+        remove_from_groups = list(self.__previous_groups - self.__groups)
+        if len(remove_from_groups) > 0:
+            self.__channel.remove_from_groups(remove_from_groups, self.id)
+        self.__previous_groups = set(self.__groups)
+        self.__channel.touch_for_groups(list(self.__groups), self.id, timeout)
+
+    def __pop_and_handle_next(self, timeout: int) -> None:
         handlers = self.__get_handler_by_queue_names()
         internal_channel = WormholeQueue.format(self.id)
         channel_queue_names: List[str] = [internal_channel]
@@ -289,11 +295,10 @@ class BasicWormhole:
                 for group_name in self.__groups | {self.id}:
                     wh_queue.group = group_name
                     channel_queue_names.append(str(wh_queue))
-        remove_from_groups = list(self.__previous_groups - self.__groups)
-        if len(remove_from_groups) > 0:
-            self.__channel.remove_from_groups(remove_from_groups, self.id)
-        self.__previous_groups = set(self.__groups)
-        self.__channel.touch_for_groups(list(self.__groups), self.id, timeout + 5)
+        # The timeout variable in this scope signifies when the next call to this function is expected to occur at MOST
+        # so we refresh the groups with a bit longer timeout, so they'll hold at least until the next expected
+        # iteration
+        self.refresh_groups(timeout * 2)
         result = self.__channel.pop_next(self.id, channel_queue_names, timeout)
 
         did_timeout = result is None
