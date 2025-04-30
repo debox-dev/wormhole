@@ -74,11 +74,15 @@ class WormholeRedisChannel(AbstractWormholeChannel):
     STATS_PREFIX = "whstats://"
 
     __encoder: WormholeEncoder
+    __send_timeout: int
+    __reply_expiration: int
 
-    def __init__(self, redis_uri: str = "redis://localhost:6379/1", max_connections=20):
+    def __init__(self, redis_uri: str = "redis://localhost:6379/1", max_connections=20, send_timeout: int = DEFAULT_MESSAGE_TIMEOUT, reply_expiration: int = DEFAULT_REPLY_TIMEOUT):
         self.__connection_pool = BlockingConnectionPool.from_url(redis_uri, max_connections=max_connections)
         self.__encoder = get_default_encoder()
         self.__closed = False
+        self.__send_timeout = send_timeout
+        self.__reply_expiration = reply_expiration
         self.__send_rate = -1
         self.__receive_rate = -1
         self.stats_enabled = True
@@ -119,7 +123,9 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         return [d.decode()[len(prefix):] for d in member_keys]
 
     def send(self, wh_sender_id: str, queue_name: str, data: Any,
-             queue_timeout: int = DEFAULT_MESSAGE_TIMEOUT) -> str:
+             queue_timeout: int = None) -> str:
+        if queue_timeout is None:
+            queue_timeout = self.__send_timeout
         actual_timeout = queue_timeout + 2
         message_id = f"wh:{generate_uid()}"
         rdb = self.__get_rdb()
@@ -184,7 +190,9 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         return True, self.__encoder.decode(data), receiver_id
 
     def reply(self, message_id: str, data: Any, is_error: bool,
-              timeout: int = DEFAULT_REPLY_TIMEOUT):
+              timeout: int = None):
+        if not timeout:
+            timeout = self.__reply_expiration
         try:
             response_queue = "response:" + message_id
             rdb = self.__get_rdb()
