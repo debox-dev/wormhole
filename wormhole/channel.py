@@ -77,8 +77,11 @@ class WormholeRedisChannel(AbstractWormholeChannel):
     __send_timeout: int
     __reply_expiration: int
 
-    def __init__(self, redis_uri: str = "redis://localhost:6379/1", max_connections=20, send_timeout: int = DEFAULT_MESSAGE_TIMEOUT, reply_expiration: int = DEFAULT_REPLY_TIMEOUT):
-        self.__connection_pool = BlockingConnectionPool.from_url(redis_uri, max_connections=max_connections)
+    def __init__(self, redis_uri: str = "redis://localhost:6379/1", max_connections=20, send_timeout: int = DEFAULT_MESSAGE_TIMEOUT, reply_expiration: int = DEFAULT_REPLY_TIMEOUT, redis_pool: BlockingConnectionPool = None):
+        if redis_pool is None:
+            self.__connection_pool = BlockingConnectionPool.from_url(redis_uri, max_connections=max_connections)
+        else:
+            self.__connection_pool = redis_pool
         self.__encoder = get_default_encoder()
         self.__closed = False
         self.__send_timeout = send_timeout
