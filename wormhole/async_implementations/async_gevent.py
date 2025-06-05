@@ -27,7 +27,7 @@ class GeventWormhole(BasicWormhole):
             gevent.sleep(0.1)
 
     def _is_handling_enabled(self):
-        return self.__current_handling_count < self.max_parallel
+        return not self.PARALLEL or self.__current_handling_count < self.max_parallel
 
     def __can_handle_async(self):
         return self._is_handling_enabled() and self.PARALLEL
@@ -38,17 +38,25 @@ class GeventWormhole(BasicWormhole):
         if not self.PARALLEL:
             super().execute_handler(handler_func, data, on_response)
             return
-        while not self.__can_handle_async():
-            self.__handling_complete_event.wait()
-            self.__handling_complete_event.clear()
-        if not self.PARALLEL:
-            return
-        self.__current_handling_count += 1
+        # Technically we will never get to this condition... never ever ever WIIIUUU WIUUUU PCHHHHHHHHH
+        # We dont need to handle this because _is_handling_enabled disables the queue listening on all but the internal queue
+        #while not self.__can_handle_async():
+        #    print("WAITING")
+        #    self.__handling_complete_event.wait()
+        #    self.__handling_complete_event.clear()
+
         gevent.spawn(self.async_handler, handler_func, data, on_response)
 
     def async_handler(self, handler_func, data, on_response):
-        BasicWormhole.execute_handler(self, handler_func, data, on_response)
-        needs_refresh = self.max_parallel <= self.__current_handling_count
+        try:
+            self.__current_handling_count += 1
+            BasicWormhole.execute_handler(self, handler_func, data, on_response)
+            needs_refresh = self.max_parallel < self.__current_handling_count
+        except Exception as e:
+            self.__current_handling_count -= 1
+            self.__handling_complete_event.set()
+            raise e
+
         self.__current_handling_count -= 1
         self.__handling_complete_event.set()
         if needs_refresh:

@@ -32,7 +32,7 @@ class WormholeSession:
             self.wait(raise_on_error=False)
         return True
 
-    def wait(self, raise_on_error=True, timeout: int = DEFAULT_MESSAGE_TIMEOUT, retries: int = 2) -> Any:
+    def wait(self, raise_on_error=True, timeout: int = DEFAULT_MESSAGE_TIMEOUT, retries: int = 0) -> Any:
         reply_data: Union[Any, Exception] = None
         if not self.__did_get_reply:
             is_success, reply_data, wh_receiver_id = self.wormhole.channel.wait_for_reply(self.message_id,

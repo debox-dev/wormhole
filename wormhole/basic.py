@@ -117,7 +117,7 @@ class BasicWormhole:
         self.__processing_start_time = time.time()
         while self.__state == WormholeState.ACTIVE:
             try:
-                self.__pop_and_handle_next(self.pop_timeout)
+                self.__pop_and_handle_next()
             except WormholeChannelClosedError:
                 break
         self.__processing_start_time = None
@@ -284,7 +284,7 @@ class BasicWormhole:
         self.__previous_groups = set(self.__groups)
         self.__channel.touch_for_groups(list(self.__groups), self.id, timeout)
 
-    def __pop_and_handle_next(self, timeout: int) -> None:
+    def __pop_and_handle_next(self) -> None:
         handlers = self.__get_handler_by_queue_names()
         internal_channel = WormholeQueue.format(self.id)
         channel_queue_names: List[str] = [internal_channel]
@@ -298,8 +298,9 @@ class BasicWormhole:
         # The timeout variable in this scope signifies when the next call to this function is expected to occur at MOST
         # so we refresh the groups with a bit longer timeout, so they'll hold at least until the next expected
         # iteration
-        self.refresh_groups(timeout * 2)
-        result = self.__channel.pop_next(self.id, channel_queue_names, timeout)
+        self.refresh_groups(self.pop_timeout * 2)
+
+        result = self.__channel.pop_next(self.id, channel_queue_names, self.pop_timeout)
 
         did_timeout = result is None
         if did_timeout:
