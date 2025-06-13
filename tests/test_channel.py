@@ -54,13 +54,14 @@ class TestRedisChannel:
         # Send data
         channel = self.tested_channel
         message_id = channel.send(imaginary_receiver_id, test_queue_name, test_payload_data, 10)
-        result_queue_name, result_message_id, result_data = channel.pop_next(imaginary_receiver_id,
+        result_queue_name, result_message_id, result_data, flags = channel.pop_next(imaginary_receiver_id,
                                                                              [test_queue_name, dummy_queue_name],
                                                                              timeout=1)
         assert not channel.check_for_reply(result_message_id)
         assert result_message_id == message_id
         assert result_queue_name == test_queue_name
         assert result_data == test_payload_data
+        assert flags == 0
 
         # Test replying to the received data
         channel.reply(result_message_id, test_reply_data, False, 1)
@@ -81,12 +82,13 @@ class TestRedisChannel:
         # Send data
         channel = self.tested_channel
         message_id = channel.send(imaginary_receiver_id, test_queue_name, test_payload_data, 10)
-        result_queue_name, result_message_id, result_data = channel.pop_next(imaginary_receiver_id,
+        result_queue_name, result_message_id, result_data, flags = channel.pop_next(imaginary_receiver_id,
                                                                              [test_queue_name, dummy_queue_name],
                                                                              timeout=1)
         assert result_message_id == message_id
         assert result_queue_name == test_queue_name
         assert result_data == test_payload_data
+        assert flags == 0
 
         # Test replying to the received data using the async object
         channel.reply(result_message_id, test_reply_data, False, 1)
@@ -103,13 +105,14 @@ class TestRedisChannel:
 
         # Send data
         channel = self.tested_channel
-        message_id = channel.send(imaginary_receiver_id, test_queue_name, test_payload_data, 10)
-        result_queue_name, result_message_id, result_data = channel.pop_next(imaginary_receiver_id,
+        message_id = channel.send(imaginary_receiver_id, test_queue_name, test_payload_data, 10, 1)
+        result_queue_name, result_message_id, result_data, flags = channel.pop_next(imaginary_receiver_id,
                                                                              [test_queue_name, dummy_queue_name],
                                                                              timeout=1)
         assert result_message_id == message_id
         assert result_queue_name == test_queue_name
         assert result_data == test_payload_data
+        assert flags == 1
         assert isinstance(result_data, Vector3)
         assert result_data.magnitude == test_payload_data.magnitude
 
@@ -133,13 +136,14 @@ class TestRedisChannel:
         channel = self.tested_channel
         # Send data
         for _ in range(0, 3000):
-            message_id = channel.send(imaginary_receiver_id, test_queue_name, test_payload_data, 10)
-            result_queue_name, result_message_id, result_data = channel.pop_next(imaginary_receiver_id,
+            message_id = channel.send(imaginary_receiver_id, test_queue_name, test_payload_data, 10, flags=1)
+            result_queue_name, result_message_id, result_data, flags = channel.pop_next(imaginary_receiver_id,
                                                                                  [test_queue_name, dummy_queue_name],
                                                                                  timeout=10)
             assert result_message_id == message_id
             assert result_queue_name == test_queue_name
             assert result_data == test_payload_data
+            assert flags == 1
             assert isinstance(result_data, Vector3)
             assert result_data.magnitude == test_payload_data.magnitude
         stats = channel.get_stats()
@@ -158,12 +162,13 @@ class TestRedisChannel:
         # Send data
         for _ in range(0, 3000):
             message_id = channel.send(imaginary_receiver_id, test_queue_name, test_payload_data, 10)
-            result_queue_name, result_message_id, result_data = channel.pop_next(imaginary_receiver_id,
+            result_queue_name, result_message_id, result_data, flags = channel.pop_next(imaginary_receiver_id,
                                                                                  [test_queue_name, dummy_queue_name],
                                                                                  timeout=10)
             assert result_message_id == message_id
             assert result_queue_name == test_queue_name
             assert result_data == test_payload_data
+            assert flags == 0
             assert isinstance(result_data, Vector3)
             assert result_data.magnitude == test_payload_data.magnitude
         stats = channel.get_stats()

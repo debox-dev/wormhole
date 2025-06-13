@@ -246,9 +246,9 @@ class TestWormholeGevent(BaseTestWormholeGevent):
             self.wormhole.send("asd", dummy_data).wait(timeout=1)
 
     def test_max_parallel(self):
-        for i in range(self.wormhole.max_parallel):
+        for i in range(self.wormhole.max_parallel * 6):
             v = Vector3Message(1, 2, 3)
-            v.delay = 5
+            v.delay = 2
             v.send(wormhole=self.wormhole)
         v = Vector3Message(4, 5, 6)
         s: WormholeSession

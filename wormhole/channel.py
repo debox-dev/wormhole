@@ -20,6 +20,8 @@ class WormholeChannelStats(NamedTuple):
 
 
 class AbstractWormholeChannel:
+    MESSAGE_FLAG_DONT_REPLY: ClassVar[int] = 1
+
     def is_open(self):
         raise NotImplementedError()
 
@@ -30,7 +32,10 @@ class AbstractWormholeChannel:
             Optional[Tuple[str, Union[str, bytes]]]:
         raise NotImplementedError()
 
-    def send(self, wh_sender_id: str, queue_name: str, data: Union[bytes, str]) -> str:
+    def send(self, wh_sender_id: str, queue_name: str, data: Union[bytes, str], queue_timeout: int = None, flags: int = 0) -> str:
+        raise NotImplementedError()
+
+    def delete(self, message_id: str) -> None:
         raise NotImplementedError()
 
     def check_for_reply(self, message_id: str) -> bool:
@@ -63,7 +68,8 @@ class AbstractWormholeChannel:
 
 
 class WormholeRedisChannel(AbstractWormholeChannel):
-    MESSAGE_DATA_HKEY = "in"
+    MESSAGE_DATA_HKEY: str = "in"
+    MESSAGE_FLAGS_KEY: str = "meta"
     MESSAGE_RESPONSE_HKEY = "out"
     MESSAGE_ERROR_HKEY = "err"
     MESSAGE_WORMHOLE_RECEIVER_ID_HKEY = "hid"
@@ -126,7 +132,7 @@ class WormholeRedisChannel(AbstractWormholeChannel):
         return [d.decode()[len(prefix):] for d in member_keys]
 
     def send(self, wh_sender_id: str, queue_name: str, data: Any,
-             queue_timeout: int = None) -> str:
+             queue_timeout: int = None, flags: int = 0) -> str:
         if queue_timeout is None:
             queue_timeout = self.__send_timeout
         actual_timeout = queue_timeout + 2
@@ -148,11 +154,11 @@ class WormholeRedisChannel(AbstractWormholeChannel):
 
         transaction = rdb.pipeline()
         transaction.hset(message_id, self.MESSAGE_DATA_HKEY, self.__encoder.encode(data))
+        transaction.hset(message_id, self.MESSAGE_FLAGS_KEY, str(flags).encode('utf-8'))
         transaction.expire(message_id, actual_timeout)
         transaction.lpush(queue_name, message_id)
         transaction.expire(queue_name, actual_timeout)
         transaction.execute()
-        transaction.close()
         assert rdb.exists(message_id)
 
         # STATS
@@ -161,8 +167,10 @@ class WormholeRedisChannel(AbstractWormholeChannel):
             seconds_since = now - last_stat_time
             if seconds_since >= 60 or total_sends_since > 2000:
                 self.__send_rate = total_sends_since / seconds_since
-                rdb.set(stats_counter_key, 0)
-                rdb.set(stats_last_update_key, now)
+                transaction = rdb.pipeline()
+                transaction.set(stats_counter_key, 0)
+                transaction.set(stats_last_update_key, now)
+                transaction.execute()
         #############
 
         return message_id
@@ -192,6 +200,9 @@ class WormholeRedisChannel(AbstractWormholeChannel):
             return True, None, receiver_id
         return True, self.__encoder.decode(data), receiver_id
 
+    def delete(self, message_id):
+        self.__get_rdb().delete(message_id)
+
     def reply(self, message_id: str, data: Any, is_error: bool,
               timeout: int = None):
         if not timeout:
@@ -219,7 +230,7 @@ class WormholeRedisChannel(AbstractWormholeChannel):
             raise WormholeChannelConnectionError(f"Connection error during reply: {e}")
 
     def pop_next(self, wh_receiver_id: str, queue_names: List[str], timeout: int = 5) -> Optional[
-        Tuple[str, str, bytes]]:
+        Tuple[str, str, bytes, int]]:
         rdb = self.__get_rdb()
         random.shuffle(queue_names)
         result: Optional[Tuple[bytes, bytes]] = rdb.brpop(queue_names, timeout)
@@ -254,12 +265,16 @@ class WormholeRedisChannel(AbstractWormholeChannel):
             return None
         if self.MESSAGE_DATA_HKEY.encode() not in result_payload:
             return None  # empty stale message
+        if self.MESSAGE_FLAGS_KEY.encode() in result_payload:
+            flags = int(result_payload[self.MESSAGE_FLAGS_KEY.encode()].decode('utf-8'))
+        else:
+            flags = 0
         try:
             rdb.hset(result_message_id, self.MESSAGE_WORMHOLE_RECEIVER_ID_HKEY, wh_receiver_id)
             message_data = result_payload[self.MESSAGE_DATA_HKEY.encode()]
         except KeyError:
             return None
-        return result_queue_name, result_message_id, self.__encoder.decode(message_data)
+        return result_queue_name, result_message_id, self.__encoder.decode(message_data), flags
 
     def close(self):
         self.__closed = True

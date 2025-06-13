@@ -13,8 +13,7 @@ from .utils import generate_uid
 from .waitable import WormholeWaitable
 from .message import WormholeMessage
 
-if TYPE_CHECKING:
-    from .channel import AbstractWormholeChannel
+from .channel import AbstractWormholeChannel
 
 
 class WormholeState(Enum):
@@ -166,11 +165,15 @@ class BasicWormhole:
         did_timeout = result is None
         if did_timeout:
             return WormholeWaitResult(None, None, None)
-        queue_name, message_id, data = result
+        queue_name, message_id, data, flags = result
 
         def reply_func(data, is_error=False):
             nonlocal self
-            self.channel.reply(message_id, data, is_error)
+            nonlocal flags
+            if flags & AbstractWormholeChannel.MESSAGE_FLAG_DONT_REPLY == 0:
+                self.channel.reply(message_id, data, is_error)
+            else:
+                self.channel.delete(message_id)
 
         item = waitable_by_queue[queue_name].item
         tag = waitable_by_queue[queue_name].tag
@@ -252,7 +255,7 @@ class BasicWormhole:
                 print("=" * 80)
 
     def send(self, queue_name: str, data: Any, tag: Union[None, str, WormholeSession] = None,
-             session: Optional[WormholeSession] = None, group: Optional[str] = None):
+             session: Optional[WormholeSession] = None, group: Optional[str] = None, dont_reply: bool = False):
         if isinstance(tag, WormholeSession):
             session = tag
             tag = None
@@ -263,7 +266,10 @@ class BasicWormhole:
         else:
             target_group = group
         queue_name = WormholeQueue.format(queue_name, tag, target_group)
-        message_id = self.__channel.send(self.id, queue_name, data)
+        flags = 0
+        if dont_reply:
+            flags |= AbstractWormholeChannel.MESSAGE_FLAG_DONT_REPLY
+        message_id = self.__channel.send(self.id, queue_name, data, flags=flags)
         return WormholeSession(message_id, self, lambda: self.send(queue_name, data, tag, session, group))
 
     def __get_handler_by_queue_names(self) -> Dict[str, Callable]:
@@ -305,18 +311,22 @@ class BasicWormhole:
         did_timeout = result is None
         if did_timeout:
             return
-        popped_queue_name, message_id, data = result
+        popped_queue_name, message_id, data, flags = result
         wh_queue = WormholeQueue.from_string(popped_queue_name)
         wh_queue.group = None
         if wh_queue.base_queue_name == self.__receiver_id:
             handler_func = self.__internal_handler_private_queue
         else:
             handler_func = handlers[str(wh_queue)]
+        dont_reply = bool(flags & AbstractWormholeChannel.MESSAGE_FLAG_DONT_REPLY & 1 > 0)
         self.execute_handler(handler_func, data,
-                             lambda d, e: self.__on_handler_response(message_id, d, e))
+                             lambda d, e: self.__on_handler_response(message_id, reply_data=d, is_error=e, dont_reply=dont_reply))
 
-    def __on_handler_response(self, message_id: str, reply_data: Any, is_error: bool):
-        self.__channel.reply(message_id, reply_data, is_error)
+    def __on_handler_response(self, message_id: str, reply_data: Any, is_error: bool, dont_reply: bool = False):
+        if dont_reply:
+            self.channel.delete(message_id)
+        else:
+            self.__channel.reply(message_id, reply_data, is_error)
 
     def __internal_handler_private_queue(self, data: bytes):
         command = data

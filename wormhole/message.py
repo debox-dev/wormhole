@@ -34,14 +34,14 @@ class WormholeMessage:
         pass
 
     def send(self, tag: Optional[str] = None, wormhole: Union[None, "BasicWormhole", "WormholeSession"] = None,
-             override_queue_name: Optional[str] = None, group: Optional[str] = None):
+             override_queue_name: Optional[str] = None, group: Optional[str] = None, dont_reply: bool = False):
         session: Optional["WormholeSession"] = None
         if isinstance(wormhole, WormholeSession):
             session = wormhole
             wormhole = wormhole.wormhole
         wormhole = self.__get_wormhole(wormhole)
         queue_name = override_queue_name or self.get_base_queue_name()
-        wormhole_async = wormhole.send(queue_name, self, tag, session=session, group=group)
+        wormhole_async = wormhole.send(queue_name, self, tag, session=session, group=group, dont_reply=dont_reply)
         return wormhole_async
 
     @classmethod
