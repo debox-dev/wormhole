@@ -1,12 +1,13 @@
 ﻿import re
 import time
 import struct
+import traceback
 from enum import Enum, auto
 from typing import *
 
 from .command import WormholeCommand, WormholePingCommand
 from .error import WormholeHandlerAlreadyExists, WormholeHandlerNotRegistered, WormholeSendError, \
-    WormholeUnknownHandlerCommandError, WormholeChannelClosedError, WormholeChannelConnectionError
+    WormholeUnknownHandlerCommandError, WormholeChannelClosedError, WormholeChannelConnectionError, WormholeDecodeError
 from .registry import PRINT_HANDLER_EXCEPTIONS
 from .session import WormholeSession
 from .utils import generate_uid
@@ -229,30 +230,29 @@ class BasicWormhole:
         del self.__handlers[queue_name]
         return self.__send_refresh()
 
+    @staticmethod
+    def __print_exc_if_needed(title: str, e: Exception, data: Any):
+        if PRINT_HANDLER_EXCEPTIONS:
+            print("=" * 80)
+            print(f"{title}: {str(e)}")
+            if data:
+                print(f"DATA: {repr(data)}")
+            traceback.print_exc()
+            print("=" * 80)
+
     def execute_handler(self, handler_func: Callable, data: Any, on_response: Callable):
         try:
             try:
                 reply_data = handler_func(data)
             except Exception as e:
-                if PRINT_HANDLER_EXCEPTIONS:
-                    import traceback
-                    print("=" * 80)
-                    print("HANDLING EXCEPTION")
-                    print(f"DATA: {repr(data)}")
-                    traceback.print_exc()
-                    print("=" * 80)
+                self.__print_exc_if_needed("HANDLING EXCEPTION", e, data)
                 on_response(e, True)
                 return
             on_response(reply_data, False)
         except WormholeChannelClosedError:
             pass  # Nothing we can do if the channel closed
         except WormholeChannelConnectionError as e:
-            if PRINT_HANDLER_EXCEPTIONS:
-                import traceback
-                print("=" * 80)
-                print(f"CONNECTION ERROR: {e}")
-                traceback.print_exc()
-                print("=" * 80)
+            self.__print_exc_if_needed("CONNECTION ERROR", e, None)
 
     def send(self, queue_name: str, data: Any, tag: Union[None, str, WormholeSession] = None,
              session: Optional[WormholeSession] = None, group: Optional[str] = None, dont_reply: bool = False):
@@ -306,7 +306,11 @@ class BasicWormhole:
         # iteration
         self.refresh_groups(self.pop_timeout * 2)
 
-        result = self.__channel.pop_next(self.id, channel_queue_names, self.pop_timeout)
+        try:
+            result = self.__channel.pop_next(self.id, channel_queue_names, self.pop_timeout)
+        except WormholeDecodeError as e:
+            self.__print_exc_if_needed("DECODE ERROR", e, None)
+            return
 
         did_timeout = result is None
         if did_timeout:
