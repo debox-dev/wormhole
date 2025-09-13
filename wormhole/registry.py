@@ -7,8 +7,8 @@ if TYPE_CHECKING:
     from .basic import BasicWormhole
 
 __PRIMARY_WORMHOLE: Optional["BasicWormhole"] = None
-DEFAULT_MESSAGE_TIMEOUT = 60
-DEFAULT_REPLY_TIMEOUT = 60
+DEFAULT_MESSAGE_TIMEOUT = 600
+DEFAULT_REPLY_TIMEOUT = 600
 PRINT_HANDLER_EXCEPTIONS = True
 DEFAULT_ENCODER: "WormholeEncoder" = WormholePickleEncoder()
 
