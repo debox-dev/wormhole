@@ -7,7 +7,8 @@ from typing import *
 
 from .command import WormholeCommand, WormholePingCommand
 from .error import WormholeHandlerAlreadyExists, WormholeHandlerNotRegistered, WormholeSendError, \
-    WormholeUnknownHandlerCommandError, WormholeChannelClosedError, WormholeChannelConnectionError, WormholeDecodeError
+    WormholeUnknownHandlerCommandError, WormholeChannelClosedError, WormholeChannelConnectionError, WormholeDecodeError, \
+    WormholeChannelPopError
 from .registry import PRINT_HANDLER_EXCEPTIONS
 from .session import WormholeSession
 from .utils import generate_uid
@@ -308,6 +309,10 @@ class BasicWormhole:
 
         try:
             result = self.__channel.pop_next(self.id, channel_queue_names, self.pop_timeout)
+        except WormholeChannelPopError as e:
+            self.__print_exc_if_needed("POP ERROR", e, None)
+            self.__channel.reply(e.result_message_id, ValueError(str(e)), True)
+            return
         except WormholeDecodeError as e:
             self.__print_exc_if_needed("DECODE ERROR", e, None)
             return

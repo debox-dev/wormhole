@@ -9,7 +9,7 @@ from redis import BlockingConnectionPool
 
 from wormhole.encoding.base import WormholeEncoder
 from wormhole.error import WormholeWaitForReplyError, WormholeChannelClosedError, \
-    WormholeChannelConnectionError
+    WormholeChannelConnectionError, WormholeDecodeError, WormholeChannelPopError
 from wormhole.registry import DEFAULT_MESSAGE_TIMEOUT, DEFAULT_REPLY_TIMEOUT, get_default_encoder
 from wormhole.utils import generate_uid
 
@@ -230,7 +230,7 @@ class WormholeRedisChannel(AbstractWormholeChannel):
             raise WormholeChannelConnectionError(f"Connection error during reply: {e}")
 
     def pop_next(self, wh_receiver_id: str, queue_names: List[str], timeout: int = 5) -> Optional[
-        Tuple[str, str, bytes, int]]:
+        Tuple[str, str, Any, int]]:
         rdb = self.__get_rdb()
         random.shuffle(queue_names)
         result: Optional[Tuple[bytes, bytes]] = rdb.brpop(queue_names, timeout)
@@ -274,7 +274,12 @@ class WormholeRedisChannel(AbstractWormholeChannel):
             message_data = result_payload[self.MESSAGE_DATA_HKEY.encode()]
         except KeyError:
             return None
-        return result_queue_name, result_message_id, self.__encoder.decode(message_data), flags
+        try:
+            message_data = self.__encoder.decode(message_data)
+            return result_queue_name, result_message_id, message_data, flags
+        except WormholeDecodeError as e:
+            raise WormholeChannelPopError(result_queue_name, result_message_id, str(e), e)
+
 
     def close(self):
         self.__closed = True

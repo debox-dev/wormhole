@@ -40,6 +40,14 @@ class WormholeDecodeError(BaseWormholeException):
     pass
 
 
+class WormholeChannelPopError(BaseWormholeException):
+    def __init__(self, result_queue_name: str, result_message_id: str, message: str, inner_exception: Exception):
+        super().__init__(message)
+        self.result_queue_name = result_queue_name
+        self.result_message_id = result_message_id
+        self.inner_exception = inner_exception
+
+
 class WormholeSendError(BaseWormholeException):
     pass
 
